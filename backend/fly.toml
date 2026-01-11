@@ -1,0 +1,26 @@
+app = "english-tutor"
+primary_region = "lax"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/"
+
+[processes]
+  app = "/app/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080"
+
+[[vm]]
+  vm_size = "shared-cpu-1x"
+  cpu_kind = "shared"
+  cpus = 1
+  memory = 256
