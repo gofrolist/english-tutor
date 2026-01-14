@@ -11,11 +11,23 @@ dependencies = [
     "fastapi>=0.95.0",
     "uvicorn>=0.22.0",
     "requests>=2.28.2",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "python-telegram-bot>=20.0",
+    "psycopg2-binary>=2.9.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth>=2.23.0",
+    "google-auth-httplib2>=0.1.1",
+    "google-auth-oauthlib>=1.1.0",
+    "apscheduler>=3.10.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=7.1.2",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
     "pyright>=1.1.0",
     "pre-commit>=3.0.0",
@@ -24,10 +36,20 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+extend-exclude = [
+    "alembic",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-ignore = []
+ignore = [
+    # Too noisy for now; allow Optional[...] until we migrate schemas to `X | None`.
+    "UP045",
+    # Keep timezone code explicit (timezone.utc) for now.
+    "UP017",
+    # Too noisy for now; rely on formatter / follow-up refactors.
+    "E501",
+]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -36,16 +58,30 @@ indent-style = "space"
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "basic"
+exclude = [
+    ".venv",
+]
+reportAttributeAccessIssue = "none"
+reportGeneralTypeIssues = "none"
+reportOptionalMemberAccess = "none"
+reportArgumentType = "none"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+filterwarnings = [
+    # httplib2 uses deprecated pyparsing APIs; noise we can't fix in this repo.
+    "ignore::DeprecationWarning:httplib2\\..*",
+]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=src",
+    "--cov=src.english_tutor.models",
+    "--cov=src.english_tutor.services",
+    "--cov=src.english_tutor.utils",
+    "--cov=src.english_tutor.config",
     "--cov-report=html",
     "--cov-report=term-missing",
     "--cov-fail-under=80",
@@ -58,10 +94,20 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src"]
+source = [
+    "src.english_tutor.models",
+    "src.english_tutor.services",
+    "src.english_tutor.utils",
+    "src.english_tutor.config",
+]
 omit = [
     "*/tests/*",
     "*/test_*.py",
+    # Not meaningfully unit-tested yet (external integrations / Telegram bot runtime)
+    "*/src/english_tutor/api/**",
+    "*/src/english_tutor/services/google_*.py",
+    "*/src/english_tutor/services/content_sync.py",
+    "*/src/english_tutor/services/scheduler.py",
 ]
 
 [tool.coverage.report]

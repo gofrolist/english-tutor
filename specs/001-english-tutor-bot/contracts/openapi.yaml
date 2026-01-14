@@ -1,0 +1,613 @@
+openapi: 3.0.3
+info:
+  title: English Tutor Content Management API
+  description: REST API for managing English learning content (tasks, questions) without requiring application redeployment
+  version: 1.0.0
+  contact:
+    name: English Tutor Team
+
+servers:
+  - url: https://api.english-tutor.example.com/v1
+    description: Production server
+  - url: http://localhost:8080/v1
+    description: Local development server
+
+tags:
+  - name: Tasks
+    description: Task (content) management operations
+  - name: Questions
+    description: Question management operations
+  - name: Content Review
+    description: Content review and approval workflows
+
+paths:
+  /tasks:
+    get:
+      tags:
+        - Tasks
+      summary: List tasks
+      description: Retrieve tasks with optional filtering by level, type, and status
+      parameters:
+        - name: level
+          in: query
+          schema:
+            type: string
+            enum: [A1, A2, B1, B2, C1, C2]
+          description: Filter by English level
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [text, audio, video]
+          description: Filter by content type
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, published]
+          description: Filter by publication status
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+          description: Maximum number of tasks to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Number of tasks to skip
+      responses:
+        '200':
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Tasks
+      summary: Create a new task
+      description: Create a new task (content) in draft status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreateRequest'
+      responses:
+        '201':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tasks/{taskId}:
+    get:
+      tags:
+        - Tasks
+      summary: Get task by ID
+      description: Retrieve a specific task by its ID
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Task UUID
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags:
+        - Tasks
+      summary: Update task
+      description: Update an existing task (draft or published)
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Task UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdateRequest'
+      responses:
+        '200':
+          description: Task updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Tasks
+      summary: Delete task
+      description: Delete a task (soft delete - sets deleted_at timestamp)
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Task UUID
+      responses:
+        '204':
+          description: Task deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tasks/{taskId}/publish:
+    post:
+      tags:
+        - Content Review
+      summary: Publish task
+      description: Change task status from draft to published (makes it available to users)
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Task UUID
+      responses:
+        '200':
+          description: Task published successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: Task cannot be published (e.g., missing required fields, no questions)
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tasks/{taskId}/questions:
+    get:
+      tags:
+        - Questions
+      summary: List questions for a task
+      description: Retrieve all questions associated with a task
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Task UUID
+      responses:
+        '200':
+          description: List of questions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Questions
+      summary: Create question for a task
+      description: Add a new question to an existing task
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Task UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionCreateRequest'
+      responses:
+        '201':
+          description: Question created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /questions/{questionId}:
+    get:
+      tags:
+        - Questions
+      summary: Get question by ID
+      description: Retrieve a specific question by its ID
+      parameters:
+        - name: questionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Question UUID
+      responses:
+        '200':
+          description: Question details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags:
+        - Questions
+      summary: Update question
+      description: Update an existing question
+      parameters:
+        - name: questionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Question UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionUpdateRequest'
+      responses:
+        '200':
+          description: Question updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Questions
+      summary: Delete question
+      description: Delete a question
+      parameters:
+        - name: questionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Question UUID
+      responses:
+        '204':
+          description: Question deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    TaskResponse:
+      type: object
+      required:
+        - id
+        - level
+        - type
+        - title
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Task UUID
+        level:
+          type: string
+          enum: [A1, A2, B1, B2, C1, C2]
+          description: English proficiency level
+        type:
+          type: string
+          enum: [text, audio, video]
+          description: Content type
+        title:
+          type: string
+          description: Task title
+        content_text:
+          type: string
+          nullable: true
+          description: Text content (required for text type)
+        content_audio_url:
+          type: string
+          nullable: true
+          format: uri
+          description: Audio content URL or Telegram file ID (required for audio type)
+        content_video_url:
+          type: string
+          nullable: true
+          format: uri
+          description: Video content URL or Telegram file ID (required for video type)
+        explanation:
+          type: string
+          nullable: true
+          description: Educational explanation/rules (typically for text tasks)
+        difficulty:
+          type: number
+          nullable: true
+          description: Numeric difficulty indicator
+        status:
+          type: string
+          enum: [draft, published]
+          description: Publication status
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+
+    TaskCreateRequest:
+      type: object
+      required:
+        - level
+        - type
+        - title
+      properties:
+        level:
+          type: string
+          enum: [A1, A2, B1, B2, C1, C2]
+        type:
+          type: string
+          enum: [text, audio, video]
+        title:
+          type: string
+        content_text:
+          type: string
+          nullable: true
+        content_audio_url:
+          type: string
+          nullable: true
+          format: uri
+        content_video_url:
+          type: string
+          nullable: true
+          format: uri
+        explanation:
+          type: string
+          nullable: true
+        difficulty:
+          type: number
+          nullable: true
+
+    TaskUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        content_text:
+          type: string
+          nullable: true
+        content_audio_url:
+          type: string
+          nullable: true
+          format: uri
+        content_video_url:
+          type: string
+          nullable: true
+          format: uri
+        explanation:
+          type: string
+          nullable: true
+        difficulty:
+          type: number
+          nullable: true
+        level:
+          type: string
+          enum: [A1, A2, B1, B2, C1, C2]
+        type:
+          type: string
+          enum: [text, audio, video]
+
+    TaskListResponse:
+      type: object
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskResponse'
+        total:
+          type: integer
+          description: Total number of tasks matching filter
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    QuestionResponse:
+      type: object
+      required:
+        - id
+        - task_id
+        - question_text
+        - answer_options
+        - correct_answer
+        - order
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Question UUID
+        task_id:
+          type: string
+          format: uuid
+          description: Parent task UUID
+        question_text:
+          type: string
+          description: Question text
+        answer_options:
+          type: array
+          items:
+            type: string
+          description: Array of answer options (multiple choice)
+        correct_answer:
+          type: integer
+          description: Index of correct answer in answer_options array
+        weight:
+          type: number
+          nullable: true
+          default: 1.0
+          description: Weight for scoring calculations
+        order:
+          type: integer
+          description: Display order within task
+
+    QuestionCreateRequest:
+      type: object
+      required:
+        - question_text
+        - answer_options
+        - correct_answer
+        - order
+      properties:
+        question_text:
+          type: string
+        answer_options:
+          type: array
+          items:
+            type: string
+          minItems: 2
+        correct_answer:
+          type: integer
+          description: Index of correct answer (0-based)
+        weight:
+          type: number
+          nullable: true
+          default: 1.0
+        order:
+          type: integer
+          minimum: 0
+
+    QuestionUpdateRequest:
+      type: object
+      properties:
+        question_text:
+          type: string
+        answer_options:
+          type: array
+          items:
+            type: string
+          minItems: 2
+        correct_answer:
+          type: integer
+        weight:
+          type: number
+          nullable: true
+        order:
+          type: integer
+          minimum: 0
+
+    QuestionListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuestionResponse'
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          description: Additional error details
+
+  responses:
+    BadRequest:
+      description: Bad request (validation error)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
