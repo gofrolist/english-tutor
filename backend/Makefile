@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck format check run clean pre-commit
+.PHONY: install test lint typecheck format check run bot clean pre-commit
 
 install:
 	uv sync
@@ -19,6 +19,9 @@ check: lint typecheck
 
 run:
 	uv run python main.py
+
+bot:
+	uv run python run_bot.py
 
 clean:
 	find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
