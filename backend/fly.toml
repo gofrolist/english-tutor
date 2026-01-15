@@ -29,5 +29,5 @@ primary_region = "lax"
   memory = 256
 
 [[files]]
-  guest_path = "./credentials.json"
+  guest_path = "/app/credentials.json"
   secret_name = "GOOGLE_CREDENTIALS"
