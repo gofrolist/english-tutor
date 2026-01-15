@@ -14,6 +14,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 
+from src.english_tutor.utils.logger import setup_logging
+
 # Load environment variables from .env file
 # Look for .env file in the backend directory (parent of src)
 env_path = Path(__file__).parent.parent.parent / ".env"
@@ -83,3 +85,7 @@ def get_telegram_bot_token() -> str:
 API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
 API_PORT: int = int(os.getenv("API_PORT", "8080"))
 DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+
+# Initialize logging based on DEBUG setting
+log_level = "DEBUG" if DEBUG else "INFO"
+setup_logging(log_level=log_level)

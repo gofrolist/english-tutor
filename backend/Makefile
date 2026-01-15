@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck format check run bot clean pre-commit
+.PHONY: install test lint typecheck format check run bot migrate setup-google-terraform clean pre-commit
 
 install:
 	uv sync
@@ -20,8 +20,17 @@ check: lint typecheck
 run:
 	uv run python main.py
 
-bot:
+migrate:
+	uv run alembic upgrade head
+
+bot: migrate
 	uv run python run_bot.py
+
+setup-google-terraform:
+	uv run python scripts/setup_google_terraform.py
+
+setup-bot-menu:
+	uv run python scripts/setup_bot_menu.py
 
 clean:
 	find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true

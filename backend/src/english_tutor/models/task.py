@@ -56,7 +56,6 @@ class Task(Base):
     content_audio_url = Column(String, nullable=True, comment="URL for audio content")
     content_video_url = Column(String, nullable=True, comment="URL for video content")
     explanation = Column(String, nullable=True, comment="Educational explanation/rules")
-    difficulty = Column(String, nullable=True, comment="Difficulty indicator (optional)")
     created_at = Column(DateTime, default=_utcnow_naive, nullable=False)
     updated_at = Column(DateTime, default=_utcnow_naive, onupdate=_utcnow_naive, nullable=False)
     status = Column(

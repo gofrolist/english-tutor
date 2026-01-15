@@ -3,13 +3,16 @@
 Business logic for assessment quiz, scoring, and level determination.
 """
 
+import random
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.english_tutor.models.assessment import Assessment, AssessmentStatus
+from src.english_tutor.models.assessment_question import AssessmentQuestion
 from src.english_tutor.utils.exceptions import AssessmentError
 from src.english_tutor.utils.logger import get_logger, log_quiz_submission, log_user_interaction
 
@@ -103,10 +106,9 @@ class AssessmentService:
         Returns:
             Created Assessment instance.
         """
-        # TODO: Select questions if question_ids is None
-        # For now, use provided question_ids or empty list
+        # Select questions if question_ids is None
         if question_ids is None:
-            question_ids = []
+            question_ids = self._select_assessment_questions(db)
 
         assessment = Assessment(
             user_id=user_id,
@@ -137,6 +139,80 @@ class AssessmentService:
         )
 
         return assessment
+
+    def _select_assessment_questions(self, db: Session, num_questions: int = 15) -> list[str]:
+        """Select balanced assessment questions across all levels.
+
+        Strategy:
+        - Select 2-3 questions from each level (A1-C2)
+        - Ensure variety in skill types if available
+        - Return question IDs as strings for JSON storage
+
+        Args:
+            db: Database session
+            num_questions: Total number of questions to select (default: 15)
+
+        Returns:
+            List of question IDs as strings
+        """
+        levels = ["A1", "A2", "B1", "B2", "C1", "C2"]
+        questions_per_level = max(2, num_questions // len(levels))
+        selected_question_ids = []
+
+        for level in levels:
+            # Get questions for this level
+            questions = (
+                db.query(AssessmentQuestion)
+                .filter(AssessmentQuestion.level == level)
+                .order_by(func.random())
+                .limit(questions_per_level)
+                .all()
+            )
+
+            for question in questions:
+                selected_question_ids.append(str(question.id))
+
+        # Shuffle to randomize order
+        random.shuffle(selected_question_ids)
+
+        # Limit to requested number
+        if len(selected_question_ids) > num_questions:
+            selected_question_ids = selected_question_ids[:num_questions]
+
+        logger.info(
+            f"Selected {len(selected_question_ids)} assessment questions across {len(levels)} levels"
+        )
+
+        return selected_question_ids
+
+    def get_assessment_questions(
+        self, db: Session, question_ids: list[str]
+    ) -> list[dict[str, Any]]:
+        """Get assessment question data by IDs.
+
+        Args:
+            db: Database session
+            question_ids: List of question ID strings
+
+        Returns:
+            List of question dictionaries with id, weight, correct_answer
+        """
+        questions = (
+            db.query(AssessmentQuestion)
+            .filter(AssessmentQuestion.id.in_([UUID(qid) for qid in question_ids]))
+            .all()
+        )
+
+        return [
+            {
+                "id": str(q.id),
+                "question_text": q.question_text,
+                "answer_options": q.answer_options,
+                "correct_answer": q.correct_answer,
+                "weight": q.weight,
+            }
+            for q in questions
+        ]
 
     async def complete_assessment(
         self,

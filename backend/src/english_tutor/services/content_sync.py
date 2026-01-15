@@ -3,7 +3,7 @@
 This service syncs content from Google Sheets and Google Drive to PostgreSQL database.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
 
@@ -11,6 +11,7 @@ from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from src.english_tutor.config import get_session_local
+from src.english_tutor.models.assessment_question import AssessmentQuestion
 from src.english_tutor.models.question import Question
 from src.english_tutor.models.task import Task, TaskStatus
 from src.english_tutor.services.google_drive import GoogleDriveService
@@ -53,6 +54,8 @@ class ContentSyncService:
             - questions_created: Number of questions created
             - questions_updated: Number of questions updated
             - questions_deleted: Number of questions deleted
+            - assessment_questions_created: Number of assessment questions created
+            - assessment_questions_updated: Number of assessment questions updated
             - errors: Number of errors encountered
 
         Raises:
@@ -65,6 +68,8 @@ class ContentSyncService:
             "questions_created": 0,
             "questions_updated": 0,
             "questions_deleted": 0,
+            "assessment_questions_created": 0,
+            "assessment_questions_updated": 0,
             "errors": 0,
         }
 
@@ -78,10 +83,11 @@ class ContentSyncService:
         try:
             logger.info("Starting content sync from Google Sheets/Drive")
 
-            # Read tasks and questions from Sheets
+            # Read tasks, questions, and assessment questions from Sheets
             try:
                 tasks_data = self.sheets_service.read_tasks()
                 questions_data = self.sheets_service.read_questions()
+                assessment_questions_data = self.sheets_service.read_assessment_questions()
             except Exception as e:
                 logger.error(f"Failed to read from Google Sheets: {e}")
                 stats["errors"] += 1
@@ -101,6 +107,12 @@ class ContentSyncService:
             # Sync questions (after tasks are synced)
             question_stats = self._sync_questions(db, questions_data, tasks_by_row_id)
             stats.update(question_stats)
+
+            # Sync assessment questions
+            assessment_question_stats = self._sync_assessment_questions(
+                db, assessment_questions_data
+            )
+            stats.update(assessment_question_stats)
 
             db.commit()
             logger.info(f"Content sync completed: {stats}")
@@ -350,7 +362,6 @@ class ContentSyncService:
             content_audio_url=task_data.get("content_audio_url"),
             content_video_url=task_data.get("content_video_url"),
             explanation=task_data.get("explanation"),
-            difficulty=task_data.get("difficulty"),
             status=TaskStatus(task_data.get("status", "draft")),
             sheets_row_id=row_id,
         )
@@ -373,10 +384,9 @@ class ContentSyncService:
         task.content_audio_url = task_data.get("content_audio_url")
         task.content_video_url = task_data.get("content_video_url")
         task.explanation = task_data.get("explanation")
-        task.difficulty = task_data.get("difficulty")
         task.status = TaskStatus(task_data.get("status", "draft"))
         task.sheets_row_id = row_id
-        task.updated_at = datetime.utcnow()
+        task.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     def _create_question(
         self,
@@ -425,4 +435,109 @@ class ContentSyncService:
         question.weight = question_data.get("weight", 1.0)
         question.order = question_data["order"]
         question.sheets_row_id = row_id
-        question.updated_at = datetime.utcnow()
+        question.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    def _sync_assessment_questions(
+        self,
+        db: Session,
+        assessment_questions_data: list[dict[str, Any]],
+    ) -> dict[str, int]:
+        """Sync assessment questions from Google Sheets to database.
+
+        Args:
+            db: Database session
+            assessment_questions_data: List of assessment question data from Sheets
+
+        Returns:
+            Statistics dictionary
+        """
+        stats = {
+            "assessment_questions_created": 0,
+            "assessment_questions_updated": 0,
+        }
+
+        # Process each assessment question from Sheets
+        for question_data in assessment_questions_data:
+            try:
+                row_id = question_data.get("row_id")
+                if not row_id:
+                    continue
+
+                # Find existing question by row_id
+                existing_question = (
+                    db.query(AssessmentQuestion)
+                    .filter(AssessmentQuestion.sheets_row_id == row_id)
+                    .first()
+                )
+
+                if existing_question:
+                    # Update existing question
+                    self._update_assessment_question(existing_question, question_data, row_id)
+                    stats["assessment_questions_updated"] += 1
+                    question_text = question_data.get("question_text") or ""
+                    logger.debug(f"Updated assessment question: {question_text[:50]}...")
+                else:
+                    # Create new question
+                    self._create_assessment_question(db, question_data, row_id)
+                    stats["assessment_questions_created"] += 1
+                    question_text = question_data.get("question_text") or ""
+                    logger.debug(f"Created assessment question: {question_text[:50]}...")
+
+            except Exception as e:
+                logger.error(
+                    f"Error syncing assessment question {question_data.get('row_id')}: {e}"
+                )
+                continue
+
+        return stats
+
+    def _create_assessment_question(
+        self,
+        db: Session,
+        question_data: dict[str, Any],
+        row_id: str,
+    ) -> AssessmentQuestion:
+        """Create a new assessment question in database.
+
+        Args:
+            db: Database session
+            question_data: Assessment question data from Sheets
+            row_id: Google Sheets row ID
+
+        Returns:
+            Created AssessmentQuestion instance
+        """
+        question = AssessmentQuestion(
+            level=question_data["level"],
+            question_text=question_data["question_text"],
+            answer_options=question_data["answer_options"],
+            correct_answer=question_data["correct_answer"],
+            weight=question_data.get("weight", 1.0),
+            skill_type=question_data.get("skill_type"),
+            sheets_row_id=row_id,
+        )
+        db.add(question)
+        db.flush()
+        return question
+
+    def _update_assessment_question(
+        self,
+        question: AssessmentQuestion,
+        question_data: dict[str, Any],
+        row_id: str,
+    ) -> None:
+        """Update existing assessment question with data from Sheets.
+
+        Args:
+            question: Existing AssessmentQuestion instance
+            question_data: Assessment question data from Sheets
+            row_id: Google Sheets row ID
+        """
+        question.level = question_data["level"]
+        question.question_text = question_data["question_text"]
+        question.answer_options = question_data["answer_options"]
+        question.correct_answer = question_data["correct_answer"]
+        question.weight = question_data.get("weight", 1.0)
+        question.skill_type = question_data.get("skill_type")
+        question.sheets_row_id = row_id
+        question.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)

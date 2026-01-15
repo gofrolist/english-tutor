@@ -19,10 +19,64 @@ from src.english_tutor.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def run_migrations() -> None:
+    """Run database migrations if needed.
+
+    This is a safety fallback in case release_command didn't run.
+    Migrations are idempotent, so running them multiple times is safe.
+
+    Note: The local alembic/ directory may shadow the installed package.
+    If migrations fail to import, run them manually with: make migrate
+    """
+    try:
+        import sys
+        from pathlib import Path
+
+        # Temporarily remove current directory from sys.path to avoid shadowing
+        # The local alembic/ directory shadows the installed alembic package
+        backend_dir = Path(__file__).parent.parent.parent.parent
+        current_dir_str = str(backend_dir.resolve())
+        path_removed = False
+
+        try:
+            if current_dir_str in sys.path:
+                sys.path.remove(current_dir_str)
+                path_removed = True
+
+            from alembic.config import Config
+
+            from alembic import command
+        except ImportError:
+            # If import fails, restore path and skip migrations
+            # This is expected when local alembic/ directory shadows the package
+            return
+        finally:
+            if path_removed and current_dir_str not in sys.path:
+                sys.path.insert(0, current_dir_str)
+
+        alembic_ini_path = backend_dir / "alembic.ini"
+        if not alembic_ini_path.exists():
+            return
+
+        alembic_cfg = Config(str(alembic_ini_path))
+        alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Database migrations completed")
+    except Exception:
+        # Silently skip if migrations can't run (e.g., due to import shadowing)
+        # Migrations should be run manually with: make migrate
+        pass
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Application lifespan (startup/shutdown)."""
     logger.info("FastAPI application starting up")
+
+    # Run migrations on startup as a safety fallback
+    # (release_command should handle this, but this ensures it happens)
+    run_migrations()
+
     if os.getenv("ENABLE_SYNC_SCHEDULER", "false").lower() == "true":
         start_scheduler()
     try:

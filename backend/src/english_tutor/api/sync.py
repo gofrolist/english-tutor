@@ -26,6 +26,8 @@ class SyncResponse(BaseModel):
     questions_created: int
     questions_updated: int
     questions_deleted: int
+    assessment_questions_created: int
+    assessment_questions_updated: int
     errors: int
     message: str
 
@@ -59,6 +61,8 @@ def sync_content(db: Session = Depends(get_db)) -> SyncResponse:
             questions_created=stats["questions_created"],
             questions_updated=stats["questions_updated"],
             questions_deleted=stats["questions_deleted"],
+            assessment_questions_created=stats.get("assessment_questions_created", 0),
+            assessment_questions_updated=stats.get("assessment_questions_updated", 0),
             errors=stats["errors"],
             message="Content sync completed successfully"
             if stats["errors"] == 0

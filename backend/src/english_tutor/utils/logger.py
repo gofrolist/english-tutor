@@ -7,19 +7,86 @@ import logging
 import sys
 from typing import Any
 
+_logging_configured = False
 
-def setup_logging(log_level: str = "INFO") -> None:
+
+def setup_logging(log_level: str = "INFO", force: bool = False) -> None:
     """Configure structured logging for the application.
 
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+        force: Force reconfiguration even if already configured.
     """
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper(), logging.INFO),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    global _logging_configured
+
+    if _logging_configured and not force:
+        return
+
+    level = getattr(logging, log_level.upper(), logging.INFO)
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+
+    # Remove existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+
+    # Create console handler with formatting
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(level)
+
+    # Custom formatter that includes extra fields
+    class StructuredFormatter(logging.Formatter):
+        def format(self, record: logging.LogRecord) -> str:
+            # Base format
+            base_msg = super().format(record)
+
+            # Add extra fields if present
+            if (
+                hasattr(record, "user_id")
+                or hasattr(record, "action")
+                or hasattr(record, "error_type")
+            ):
+                extra_parts = []
+                for key, value in record.__dict__.items():
+                    if key not in [
+                        "name",
+                        "msg",
+                        "args",
+                        "created",
+                        "filename",
+                        "funcName",
+                        "levelname",
+                        "levelno",
+                        "lineno",
+                        "module",
+                        "msecs",
+                        "message",
+                        "pathname",
+                        "process",
+                        "processName",
+                        "relativeCreated",
+                        "thread",
+                        "threadName",
+                        "exc_info",
+                        "exc_text",
+                        "stack_info",
+                    ]:
+                        extra_parts.append(f"{key}={value}")
+                if extra_parts:
+                    base_msg += f" | {' '.join(extra_parts)}"
+
+            return base_msg
+
+    formatter = StructuredFormatter(
+        fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        stream=sys.stdout,
     )
+    console_handler.setFormatter(formatter)
+
+    root_logger.addHandler(console_handler)
+
+    _logging_configured = True
 
 
 def get_logger(name: str) -> logging.Logger:
