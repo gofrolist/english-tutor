@@ -123,6 +123,41 @@ SYNC_INTERVAL_MINUTES=60
 
 **Setting Up Google Sheets/Drive Integration:**
 
+**Option 1: Fully Automated Setup with Terraform (Recommended)**
+
+This option uses Terraform to fully automate Google Cloud setup - no manual steps required!
+
+**Prerequisites:**
+- Install [Terraform](https://www.terraform.io/downloads)
+- Install [Google Cloud SDK](https://cloud.google.com/sdk/docs/install)
+- Authenticate: `gcloud auth login && gcloud auth application-default login`
+
+**Run the setup:**
+```bash
+cd backend
+make setup-google-terraform
+```
+
+This will automatically:
+- Create or use existing GCP project
+- Enable Google Sheets API and Google Drive API
+- Create service account
+- Download and save credentials
+- **Create a template Google Sheet** with correct structure (optional)
+- Update your `.env` file
+
+**After setup, you only need to:**
+- If you created a template: Review and fill in your content
+- If using existing sheet: Share your Google Sheets with the service account email (shown at the end)
+- Share your Google Drive files with the service account email
+
+**Google Sheets Format:**
+See `backend/docs/SHEETS_FORMAT.md` for detailed format requirements. The template includes:
+- **Tasks sheet**: Columns for level, type, title, content, explanation, difficulty, status, row_id
+- **Questions sheet**: Columns for task_row_id, question_text, answer_options, correct_answer, weight, order, row_id
+
+**Option 2: Manual Setup**
+
 1. **Create Google Cloud Project:**
    - Go to [Google Cloud Console](https://console.cloud.google.com)
    - Create a new project or select existing one
@@ -137,7 +172,7 @@ SYNC_INTERVAL_MINUTES=60
    - Click "Create Credentials" → "Service Account"
    - Give it a name (e.g., "english-tutor-content-sync")
    - Create and download the JSON key file
-   - Save it as `credentials.json` in your project
+   - Save it as `credentials.json` in the `backend/` directory
 
 4. **Share Google Sheets:**
    - Open your Google Sheets spreadsheet
@@ -154,6 +189,12 @@ SYNC_INTERVAL_MINUTES=60
    - Open your Google Sheets
    - The ID is in the URL: `https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit`
    - Copy the `SPREADSHEET_ID` part
+
+7. **Update `.env` file:**
+   ```bash
+   GOOGLE_CREDENTIALS_PATH=./credentials.json
+   GOOGLE_SHEETS_ID=your_spreadsheet_id_here
+   ```
 
 ### 3. Install Dependencies
 

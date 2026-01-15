@@ -6,6 +6,7 @@ Handles the initial bot interaction when a user starts a conversation.
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from src.english_tutor.api.bot.handlers.assessment import assess_command
 from src.english_tutor.config import get_session_local
 from src.english_tutor.models.user import User
 from src.english_tutor.utils.logger import get_logger, log_user_interaction
@@ -51,24 +52,26 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             logger.info(f"New user created: {user_telegram_id}")
 
         welcome_message = (
-            "Welcome to English Tutor Bot! 🇬🇧\n\n"
-            "I'll help you improve your English through personalized learning tasks.\n\n"
+            "Добро пожаловать в English Tutor Bot! 🇬🇧\n\n"
+            "Я помогу вам улучшить английский язык с помощью персонализированных заданий.\n\n"
         )
 
         if user.current_level is None:
             welcome_message += (
-                "Let's start by assessing your English level. "
-                "This will help me provide you with the right learning materials.\n\n"
-                "Type /assess to begin the assessment quiz."
+                "Давайте начнем с оценки вашего уровня английского. "
+                "Это поможет мне подобрать подходящие материалы для обучения.\n\n"
+                "Запускаю оценку..."
             )
         else:
             welcome_message += (
-                f"Your current English level is: {user.current_level}\n\n"
-                "You can:\n"
-                "- Type /task to get a new learning task\n"
-                "- Type /assess to retake the assessment"
+                f"Ваш текущий уровень английского: {user.current_level}\n\n"
+                "Запускаю новую оценку для обновления уровня..."
             )
 
         await update.message.reply_text(welcome_message)
     finally:
         db.close()
+
+    # Automatically start assessment after welcome message
+    # assess_command will create its own database session
+    await assess_command(update, context)

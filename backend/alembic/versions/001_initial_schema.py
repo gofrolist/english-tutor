@@ -1,7 +1,7 @@
 """Initial database schema.
 
 Revision ID: 001_initial
-Revises: 
+Revises:
 Create Date: 2026-01-10
 
 This migration creates the complete initial database schema including:
@@ -9,17 +9,18 @@ This migration creates the complete initial database schema including:
 - Tasks and questions tables (with Google Sheets integration)
 - Progress tracking table
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 # revision identifiers, used by Alembic.
 revision: str = "001_initial"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -113,9 +114,12 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="CASCADE"),
         sa.CheckConstraint("weight > 0", name="check_weight_positive"),
-        sa.CheckConstraint("order > 0", name="check_order_positive"),
+        sa.CheckConstraint('"order" > 0', name="check_order_positive"),
     )
-    op.create_index("idx_question_task_order", "questions", ["task_id", "order"])
+    # Create index with quoted column name for reserved keyword
+    op.execute(
+        'CREATE INDEX idx_question_task_order ON questions (task_id, "order")'
+    )
     op.create_index(op.f("ix_questions_task_id"), "questions", ["task_id"])
     op.create_index(op.f("ix_questions_sheets_row_id"), "questions", ["sheets_row_id"])
 
@@ -132,7 +136,8 @@ def upgrade() -> None:
         sa.Column("time_taken_seconds", sa.Float(), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="CASCADE"),
-        sa.UniqueConstraint("user_id", "task_id", name="uq_user_task_progress"),
+        # Note: UniqueConstraint removed - using unique index instead (idx_progress_user_task)
+        # to avoid duplicate indexes (UniqueConstraint automatically creates an index)
         sa.CheckConstraint("score >= 0", name="check_score_non_negative"),
         sa.CheckConstraint(
             "percentage_correct >= 0 AND percentage_correct <= 100",
@@ -152,12 +157,13 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_progress_task_id"), table_name="progress")
     op.drop_index("idx_progress_completed_at", table_name="progress")
     op.drop_index("idx_progress_user_task", table_name="progress")
+    # Note: No UniqueConstraint to drop (removed to avoid duplicate with unique index)
     op.drop_table("progress")
 
     # Drop questions table
     op.drop_index(op.f("ix_questions_sheets_row_id"), table_name="questions")
     op.drop_index(op.f("ix_questions_task_id"), table_name="questions")
-    op.drop_index("idx_question_task_order", table_name="questions")
+    op.execute('DROP INDEX IF EXISTS idx_question_task_order')
     op.drop_table("questions")
 
     # Drop tasks table

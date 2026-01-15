@@ -1,0 +1,37 @@
+row_id,task_row_id,question_text,answer_options,correct_answer,weight,order
+question-001,task-001,What is the simple present form of 'to be' for 'I'?,am|is|are,0,1.0,1
+question-002,task-001,Which sentence uses simple present correctly?,I go to school every day|I am going to school every day|I went to school every day,0,1.0,2
+question-003,task-001,Simple present is used for:,habits and routines|actions happening now|completed actions,0,1.0,3
+question-004,task-002,What is a formal greeting?,Hello|Hi|Hey,0,1.0,1
+question-005,task-002,"When do you say ""Good evening""?",In the morning|In the afternoon|In the evening,2,1.0,2
+question-006,task-002,Which greeting is most informal?,Hello|Hi|Good morning,1,1.0,3
+question-007,task-003,What is the present continuous form of 'study'?,studying|studied|study,0,1.0,1
+question-008,task-003,Present continuous is used for:,actions happening now|completed actions|future plans,0,1.0,2
+question-009,task-003,Which sentence is correct?,I am reading a book now|I read a book now|I was reading a book now,0,1.0,3
+question-010,task-004,Which is a countable noun?,water|rice|apple,2,1.0,1
+question-011,task-004,"Which article is correct: ""I need ___ water""?",a|an|(no article),2,1.0,2
+question-012,task-004,Which is correct?,some apples|a rice|an information,0,1.0,3
+question-013,task-005,What is the past perfect form of 'finish'?,had finished|finished|has finished,0,1.0,1
+question-014,task-005,Past perfect shows:,an action before another past action|a future action|a present action,0,1.0,2
+question-015,task-005,Which sentence uses past perfect correctly?,I had eaten when she arrived|I ate when she had arrived|I have eaten when she arrived,0,1.0,3
+question-016,task-006,What is the structure of first conditional?,If + present simple|then will + infinitive|If + past|then would + infinitive|If + present perfect|then will have + past participle,0,1.0,1
+question-017,task-006,First conditional is used for:,real future possibilities|impossible past situations|hypothetical present,0,1.0,2
+question-018,task-006,Which sentence is first conditional?,If it rains tomorrow|I will stay home|If I had money|I would buy a car|If I study|I pass,0,1.0,3
+question-019,task-007,"What is the passive form of ""They built the house""?",The house was built by them|The house is built by them|The house will be built by them,0,1.0,1
+question-020,task-007,Passive voice is used when:,the action is more important|the doer is more important|both are equally important,0,1.0,2
+question-021,task-007,Which sentence is in passive voice?,The cat chased the mouse|The mouse was chased by the cat|The cat is chasing the mouse,1,1.0,3
+question-022,task-008,"How do you report ""I am tired""?",He said he is tired|He said he was tired|He said he will be tired,1,1.0,1
+question-023,task-008,Reported speech requires:,tense backshifting|no tense change|future tense,0,1.0,2
+question-024,task-008,"How do you report ""I will come tomorrow""?",He said he will come tomorrow|He said he would come tomorrow|He said he comes tomorrow,1,1.0,3
+question-025,task-009,What is the structure of third conditional?,If + past perfect|would have + past participle|If + present|will + infinitive|If + past|would + infinitive,0,1.0,1
+question-026,task-009,Third conditional expresses:,hypothetical past situations|real future possibilities|present habits,0,1.0,2
+question-027,task-009,Which sentence is third conditional?,If I study|I will pass|If I had studied|I would have passed|If I studied|I would pass,1,1.0,3
+question-028,task-010,Mixed conditionals combine:,different time frames|same time frames|only past events,0,1.0,1
+question-029,task-010,Which sentence is a mixed conditional?,If I had learned English earlier|I would be fluent now|If I learn English|I will be fluent|If I learned English|I would be fluent,0,1.0,2
+question-030,task-010,Mixed conditionals connect:,past actions to present results|present actions to future results|future actions to past results,0,1.0,3
+question-031,task-011,Which sentence uses subjunctive mood correctly?,I wish I was taller|I wish I were taller|I wish I am taller,1,1.0,1
+question-032,task-011,Subjunctive mood is used for:,wishes and hypothetical situations|facts and statements|questions and commands,0,1.0,2
+question-033,task-011,Which is correct?,It's important that he is on time|It's important that he be on time|It's important that he will be on time,1,1.0,3
+question-034,task-012,Inversion is used for:,emphasis in formal English|casual conversation|questions only,0,1.0,1
+question-035,task-012,Which sentence uses inversion?,Never I have seen such beauty|Never have I seen such beauty|I have never seen such beauty,1,1.0,2
+question-036,task-012,Inversion is common with:,negative adverbs|positive adverbs|all adverbs,0,1.0,3

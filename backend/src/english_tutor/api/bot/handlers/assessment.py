@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes
 
 from src.english_tutor.config import get_session_local
 from src.english_tutor.models.assessment import Assessment, AssessmentStatus
+from src.english_tutor.models.assessment_question import AssessmentQuestion
 from src.english_tutor.models.user import User
 from src.english_tutor.services.assessment import AssessmentService
 from src.english_tutor.utils.logger import get_logger, log_quiz_submission, log_user_interaction
@@ -48,10 +49,10 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Get or create user
         user = db.query(User).filter(User.telegram_user_id == user_telegram_id).first()
         if not user:
-            await update.message.reply_text("Please start the bot first with /start command.")
+            await update.message.reply_text("Пожалуйста, сначала запустите бота командой /start.")
             return
 
-        # Check for existing in-progress assessment
+        # Check for existing in-progress assessment and abandon it
         existing_assessment = (
             db.query(Assessment)
             .filter(
@@ -62,20 +63,22 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
         if existing_assessment:
-            await update.message.reply_text(
-                "You already have an assessment in progress. "
-                "Please complete it first or type /cancel to abandon it."
+            # Abandon the existing assessment to start a new one
+            await assessment_service.abandon_assessment(existing_assessment.id, db)
+            # Clear context data from the abandoned assessment
+            user_data = _get_user_data(context)
+            user_data.pop("current_assessment_id", None)
+            user_data.pop("current_question_index", None)
+            logger.info(
+                f"Abandoned existing assessment {existing_assessment.id} to start new one",
+                extra={"user_id": str(user.id), "assessment_id": str(existing_assessment.id)},
             )
-            return
 
-        # TODO: Select assessment questions (for now, use empty list)
-        question_ids = []
-
-        # Start new assessment
+        # Start new assessment (questions will be selected automatically)
         assessment = await assessment_service.start_assessment(
             user.id,
             db,
-            question_ids=question_ids,
+            question_ids=None,  # None triggers automatic selection
         )
 
         # Store assessment ID in context for answer collection
@@ -83,14 +86,13 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user_data["current_assessment_id"] = str(assessment.id)
 
         await update.message.reply_text(
-            "Great! Let's assess your English level.\n\n"
-            "I'll ask you a series of questions. "
-            "Please answer each question by selecting one of the options.\n\n"
-            "Ready? Let's begin!"
+            "Отлично! Давайте оценим ваш уровень английского.\n\n"
+            "Я задам вам несколько вопросов. "
+            "Пожалуйста, отвечайте на каждый вопрос, выбирая один из вариантов.\n\n"
+            "Готовы? Начинаем!"
         )
 
-        # TODO: Send first question
-        # For now, send a placeholder message
+        # Send first question
         await send_assessment_question(update, context, assessment.id, db)
     finally:
         db.close()
@@ -113,25 +115,64 @@ async def send_assessment_question(
     try:
         assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
         if not assessment:
-            await update.message.reply_text("Assessment not found.")
+            # Handle both message and callback query cases
+            if update.message:
+                await update.message.reply_text("Оценка не найдена.")
+            elif update.callback_query:
+                await update.callback_query.message.reply_text("Оценка не найдена.")
             return
 
-        # TODO: Get next question from assessment.questions
-        # For now, send a placeholder
-        question_text = "Sample question: What is the past tense of 'go'?"
-        answer_options = ["goed", "went", "gone", "going"]
-        _correct_answer = 1
+        # Get current question index from context
+        user_data = _get_user_data(context)
+        current_question_index = user_data.get("current_question_index", 0)
+        question_ids = list(assessment.questions) if assessment.questions else []
 
+        if current_question_index >= len(question_ids):
+            # All questions answered, complete assessment
+            await complete_and_deliver_result(update, context, assessment_id, db)
+            return
+
+        # Get current question
+        question_id_str = question_ids[current_question_index]
+        question_uuid = (
+            UUID(question_id_str) if isinstance(question_id_str, str) else question_id_str
+        )
+        question = (
+            db.query(AssessmentQuestion).filter(AssessmentQuestion.id == question_uuid).first()
+        )
+
+        if not question:
+            # Handle both message and callback query cases
+            if update.message:
+                await update.message.reply_text("Вопрос не найден.")
+            elif update.callback_query:
+                await update.callback_query.message.reply_text("Вопрос не найден.")
+            return
+
+        # Build keyboard with answer options
         keyboard = [
-            [InlineKeyboardButton(option, callback_data=f"answer_{i}")]
-            for i, option in enumerate(answer_options)
+            [InlineKeyboardButton(option, callback_data=f"answer_{current_question_index}_{i}")]
+            for i, option in enumerate(question.answer_options)
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(
-            question_text,
-            reply_markup=reply_markup,
-        )
+        # Send question
+        question_number = current_question_index + 1
+        total_questions = len(question_ids)
+        message_text = f"Вопрос {question_number}/{total_questions}\n\n{question.question_text}"
+
+        # Handle both message and callback query cases
+        if update.message:
+            await update.message.reply_text(
+                message_text,
+                reply_markup=reply_markup,
+            )
+        elif update.callback_query:
+            # Send new message after callback query
+            await update.callback_query.message.reply_text(
+                message_text,
+                reply_markup=reply_markup,
+            )
     finally:
         db.close()
 
@@ -165,38 +206,62 @@ async def handle_assessment_answer(
     try:
         user = db.query(User).filter(User.telegram_user_id == user_telegram_id).first()
         if not user:
-            await query.edit_message_text("User not found. Please start with /start.")
+            await query.edit_message_text("Пользователь не найден. Пожалуйста, начните с /start.")
             return
 
         assessment_id_str = context.user_data.get("current_assessment_id")
         if not assessment_id_str:
-            await query.edit_message_text("No active assessment found. Type /assess to start.")
+            await query.edit_message_text("Активная оценка не найдена. Введите /assess для начала.")
             return
 
         assessment_id = UUID(assessment_id_str)
         assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
 
         if not assessment or assessment.status != AssessmentStatus.IN_PROGRESS:
-            await query.edit_message_text("Assessment not found or already completed.")
+            await query.edit_message_text("Оценка не найдена или уже завершена.")
             return
 
-        # Extract answer index from callback data
-        answer_index = int(answer_data.split("_")[1])
+        # Extract question index and answer index from callback data
+        # Format: "answer_{question_index}_{answer_index}"
+        parts = answer_data.split("_")
+        if len(parts) != 3:
+            await query.edit_message_text("Неверный формат ответа.")
+            return
 
-        # TODO: Store answer in assessment.answers
-        # For now, collect answers in context
+        question_index = int(parts[1])
+        answer_index = int(parts[2])
+
+        # Get question ID from assessment
+        question_ids = assessment.questions
+        if question_index >= len(question_ids):
+            await query.edit_message_text("Неверный индекс вопроса.")
+            return
+
+        question_id_str = question_ids[question_index]
+
+        # Store answer in assessment.answers
+        # assessment.answers is JSONB, convert to dict, update, and assign back
+        current_answers = assessment.answers if assessment.answers else {}
+        if not isinstance(current_answers, dict):
+            current_answers = {}
+        updated_answers = dict(current_answers)
+        updated_answers[question_id_str] = answer_index
+        assessment.answers = updated_answers
+        db.commit()
+
+        # Update context
         user_data = _get_user_data(context)
-        if "assessment_answers" not in user_data:
-            user_data["assessment_answers"] = {}
+        user_data["current_question_index"] = question_index + 1
 
-        # TODO: Get current question ID and store answer
-        # For now, use placeholder
-        question_id = "q1"  # TODO: Get from current question
-        user_data["assessment_answers"][question_id] = answer_index
-
-        # TODO: Check if more questions remain
-        # For now, complete assessment after first answer (placeholder)
-        await complete_and_deliver_result(update, context, assessment_id, db)
+        # Check if more questions remain
+        if question_index + 1 < len(question_ids):
+            # Send next question
+            await query.answer("Ответ записан!")
+            await send_assessment_question(update, context, assessment_id, db)
+        else:
+            # All questions answered, complete assessment
+            await query.answer("Последний ответ записан!")
+            await complete_and_deliver_result(update, context, assessment_id, db)
     finally:
         db.close()
 
@@ -219,17 +284,17 @@ async def complete_and_deliver_result(
         assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
         if not assessment:
             if update.callback_query:
-                await update.callback_query.edit_message_text("Assessment not found.")
+                await update.callback_query.edit_message_text("Оценка не найдена.")
             else:
-                await update.message.reply_text("Assessment not found.")
+                await update.message.reply_text("Оценка не найдена.")
             return
 
         user = db.query(User).filter(User.id == assessment.user_id).first()
 
-        # TODO: Get actual questions and calculate score
-        # For now, use placeholder
-        questions = []  # TODO: Get from database
-        answers = context.user_data.get("assessment_answers", {})
+        # Get actual questions from database
+        question_ids_list = list(assessment.questions) if assessment.questions else []
+        questions = assessment_service.get_assessment_questions(db, question_ids_list)
+        answers = dict(assessment.answers) if assessment.answers else {}
 
         # Calculate score and determine level
         score = assessment_service.calculate_score(questions, answers)
@@ -251,15 +316,15 @@ async def complete_and_deliver_result(
 
         # Deliver result
         result_message = (
-            "Assessment Complete!\n\n"
-            f"Your English level is: {level}\n\n"
-            f"Score: {score * 100:.1f}%\n\n"
-            "Based on the Common European Framework of Reference (CEFR):\n"
-            "- A1-A2: Beginner\n"
-            "- B1-B2: Intermediate\n"
-            "- C1-C2: Advanced\n\n"
-            "Now you can start learning with tasks appropriate to your level!\n"
-            "Type /task to get your first learning task."
+            "Оценка завершена!\n\n"
+            f"Ваш уровень английского: {level}\n\n"
+            f"Результат: {score * 100:.1f}%\n\n"
+            "Согласно Общеевропейским компетенциям владения иностранным языком (CEFR):\n"
+            "- A1-A2: Начальный уровень\n"
+            "- B1-B2: Средний уровень\n"
+            "- C1-C2: Продвинутый уровень\n\n"
+            "Теперь вы можете начать обучение с заданиями, подходящими вашему уровню!\n"
+            "Введите /task, чтобы получить первое задание."
         )
 
         if update.callback_query:
@@ -269,7 +334,7 @@ async def complete_and_deliver_result(
 
         # Clear assessment from context
         context.user_data.pop("current_assessment_id", None)
-        context.user_data.pop("assessment_answers", None)
+        context.user_data.pop("current_question_index", None)
 
         if user is not None:
             log_quiz_submission(

@@ -31,7 +31,6 @@ class TaskCreate(BaseModel):
     content_audio_url: Optional[str] = Field(None, description="URL for audio content")
     content_video_url: Optional[str] = Field(None, description="URL for video content")
     explanation: Optional[str] = Field(None, description="Educational explanation/rules")
-    difficulty: Optional[str] = Field(None, description="Difficulty indicator")
     status: str = Field(default="draft", description="Task status (draft, published)")
 
 
@@ -45,7 +44,6 @@ class TaskUpdate(BaseModel):
     content_audio_url: Optional[str] = Field(None, description="URL for audio content")
     content_video_url: Optional[str] = Field(None, description="URL for video content")
     explanation: Optional[str] = Field(None, description="Educational explanation/rules")
-    difficulty: Optional[str] = Field(None, description="Difficulty indicator")
     status: Optional[str] = Field(None, description="Task status (draft, published)")
 
 
@@ -62,7 +60,6 @@ class TaskResponse(BaseModel):
     content_audio_url: Optional[str]
     content_video_url: Optional[str]
     explanation: Optional[str]
-    difficulty: Optional[str]
     status: str
     created_at: datetime
     updated_at: datetime
@@ -175,7 +172,6 @@ def create_task(
             content_audio_url=task_data.content_audio_url,
             content_video_url=task_data.content_video_url,
             explanation=task_data.explanation,
-            difficulty=task_data.difficulty,
             status=task_data.status,  # Status is already a string, model expects string
         )
 
@@ -286,9 +282,6 @@ def update_task(
 
         if task_data.explanation is not None:
             task.explanation = task_data.explanation
-
-        if task_data.difficulty is not None:
-            task.difficulty = task_data.difficulty
 
         if task_data.status is not None:
             valid_statuses = ["draft", "published"]

@@ -53,14 +53,14 @@ async def task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Get user
         user = db.query(User).filter(User.telegram_user_id == user_telegram_id).first()
         if not user:
-            await update.message.reply_text("Please start the bot first with /start command.")
+            await update.message.reply_text("Пожалуйста, сначала запустите бота командой /start.")
             return
 
         # Check if user has a level
         if not user.current_level:
             await update.message.reply_text(
-                "Please complete the assessment first to determine your English level.\n\n"
-                "Type /assess to begin the assessment quiz."
+                "Пожалуйста, сначала пройдите оценку, чтобы определить ваш уровень английского.\n\n"
+                "Введите /assess, чтобы начать оценку."
             )
             return
 
@@ -69,8 +69,8 @@ async def task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         if not task:
             await update.message.reply_text(
-                "Sorry, no tasks are available for your level at the moment.\n\n"
-                "Please try again later or type /assess to retake the assessment."
+                "Извините, сейчас нет заданий для вашего уровня.\n\n"
+                "Попробуйте позже или введите /assess, чтобы пройти оценку заново."
             )
             return
 
@@ -97,7 +97,7 @@ async def task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except TaskDeliveryError as e:
         logger.error("Task delivery error", extra={"error": str(e)})
         await update.message.reply_text(
-            f"An error occurred while delivering the task: {str(e)}\n\nPlease try again later."
+            f"Произошла ошибка при выдаче задания: {str(e)}\n\nПожалуйста, попробуйте позже."
         )
     finally:
         db.close()
@@ -114,7 +114,7 @@ async def deliver_text_task(update: Update, task: Task, db) -> None:
     message = f"📝 **{task.title}**\n\n{task.content_text}"
 
     if task.explanation:
-        message += f"\n\n💡 **Explanation:**\n{task.explanation}"
+        message += f"\n\n💡 **Объяснение:**\n{task.explanation}"
 
     await update.message.reply_text(
         message,
@@ -136,7 +136,7 @@ async def deliver_audio_task(update: Update, task: Task, db) -> None:
         db: Database session.
     """
     await update.message.reply_text(
-        f"🎧 **{task.title}**\n\nPlease listen to the audio file below."
+        f"🎧 **{task.title}**\n\nПожалуйста, прослушайте аудиофайл ниже."
     )
 
     # Send audio file
@@ -146,7 +146,7 @@ async def deliver_audio_task(update: Update, task: Task, db) -> None:
             caption=task.title,
         )
     else:
-        await update.message.reply_text("Error: Audio content URL is missing.")
+        await update.message.reply_text("Ошибка: отсутствует URL аудио контента.")
 
     logger.info(
         "Audio task delivered",
@@ -162,7 +162,7 @@ async def deliver_video_task(update: Update, task: Task, db) -> None:
         task: Task object.
         db: Database session.
     """
-    await update.message.reply_text(f"🎥 **{task.title}**\n\nPlease watch the video below.")
+    await update.message.reply_text(f"🎥 **{task.title}**\n\nПожалуйста, посмотрите видео ниже.")
 
     # Send video file
     if task.content_video_url:
@@ -171,7 +171,7 @@ async def deliver_video_task(update: Update, task: Task, db) -> None:
             caption=task.title,
         )
     else:
-        await update.message.reply_text("Error: Video content URL is missing.")
+        await update.message.reply_text("Ошибка: отсутствует URL видео контента.")
 
     logger.info(
         "Video task delivered",
@@ -261,20 +261,22 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         user = db.query(User).filter(User.telegram_user_id == user_telegram_id).first()
         if not user:
-            await query.edit_message_text("User not found. Please start with /start.")
+            await query.edit_message_text("Пользователь не найден. Пожалуйста, начните с /start.")
             return
 
         user_data = _get_user_data(context)
         task_id_str = user_data.get("current_task_id")
         if not task_id_str:
-            await query.edit_message_text("No active task found. Type /task to get a new task.")
+            await query.edit_message_text(
+                "Активное задание не найдено. Введите /task, чтобы получить новое задание."
+            )
             return
 
         task_id = UUID(task_id_str)
         task = db.query(Task).filter(Task.id == task_id).first()
 
         if not task:
-            await query.edit_message_text("Task not found.")
+            await query.edit_message_text("Задание не найдено.")
             return
 
         # Store answer
@@ -296,7 +298,7 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 break
 
         if current_question_idx is None:
-            await query.edit_message_text("Question not found.")
+            await query.edit_message_text("Вопрос не найден.")
             return
 
         # Check if there are more questions
@@ -304,7 +306,7 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # Send next question
             next_question = questions[current_question_idx + 1]
             await query.edit_message_text(
-                f"✓ Answer recorded!\n\n{next_question.question_text}",
+                f"✓ Ответ записан!\n\n{next_question.question_text}",
                 reply_markup=InlineKeyboardMarkup(
                     [
                         [
@@ -322,7 +324,9 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     except (TaskDeliveryError, ValueError, Exception) as e:
         logger.error("Task answer handling error", extra={"error": str(e)})
-        await query.edit_message_text(f"An error occurred: {str(e)}\n\nPlease try again.")
+        await query.edit_message_text(
+            f"Произошла ошибка: {str(e)}\n\nПожалуйста, попробуйте снова."
+        )
     finally:
         db.close()
 
@@ -359,22 +363,22 @@ async def complete_task_and_send_feedback(
         score_emoji = "🎉" if percentage >= 80 else "👍" if percentage >= 60 else "📚"
 
         feedback_message = (
-            f"{score_emoji} **Task Completed!**\n\n"
-            f"Your score: **{percentage:.1f}%**\n"
-            f"Points earned: **{progress.score:.1f}**\n\n"
+            f"{score_emoji} **Задание выполнено!**\n\n"
+            f"Ваш результат: **{percentage:.1f}%**\n"
+            f"Заработано баллов: **{progress.score:.1f}**\n\n"
         )
 
         if percentage >= 80:
-            feedback_message += "Excellent work! Keep it up! 🌟"
+            feedback_message += "Отличная работа! Продолжайте в том же духе! 🌟"
         elif percentage >= 60:
-            feedback_message += "Good job! You're making progress. 💪"
+            feedback_message += "Хорошая работа! Вы делаете успехи. 💪"
         else:
-            feedback_message += "Keep practicing! You're learning. 📖"
+            feedback_message += "Продолжайте практиковаться! Вы учитесь. 📖"
 
         # Get task for explanation
         task = db.query(Task).filter(Task.id == task_id).first()
         if task and task.explanation:
-            feedback_message += f"\n\n💡 **Explanation:**\n{task.explanation}"
+            feedback_message += f"\n\n💡 **Объяснение:**\n{task.explanation}"
 
         await update.callback_query.edit_message_text(
             feedback_message,
@@ -398,5 +402,5 @@ async def complete_task_and_send_feedback(
     except Exception as e:
         logger.error("Error completing task", extra={"error": str(e)})
         await update.callback_query.edit_message_text(
-            "An error occurred while completing the task. Please try again."
+            "Произошла ошибка при завершении задания. Пожалуйста, попробуйте снова."
         )
