@@ -5,6 +5,7 @@ Tests for task delivery service level filtering and task selection.
 
 import pytest
 
+from src.english_tutor.models.progress import Progress
 from src.english_tutor.models.task import Task
 from src.english_tutor.models.user import User
 from src.english_tutor.services.task_delivery import TaskDeliveryService
@@ -138,6 +139,81 @@ class TestTaskDeliveryService:
         assert selected_task is not None
         assert selected_task.level in ["A2", "B1", "B2"]
         assert selected_task.status == "published"
+
+    def test_select_task_for_user_excludes_completed(self, db_session):
+        """Test that completed tasks are excluded from selection."""
+        user = User(telegram_user_id="22222", current_level="B1", is_active=True)
+        db_session.add(user)
+        db_session.commit()
+
+        task1 = Task(
+            level="B1",
+            type="text",
+            title="Task 1",
+            content_text="Content 1",
+            status="published",
+        )
+        task2 = Task(
+            level="B1",
+            type="text",
+            title="Task 2",
+            content_text="Content 2",
+            status="published",
+        )
+        db_session.add_all([task1, task2])
+        db_session.commit()
+
+        # Mark task1 as completed
+        progress = Progress(
+            user_id=user.id,
+            task_id=task1.id,
+            answers={},
+            score=10.0,
+            percentage_correct=100.0,
+        )
+        db_session.add(progress)
+        db_session.commit()
+
+        service = TaskDeliveryService()
+        selected_task = service.select_task_for_user(user.id, db_session)
+
+        # Should select task2, not task1
+        assert selected_task is not None
+        assert selected_task.id == task2.id
+        assert selected_task.id != task1.id
+
+    def test_select_task_for_user_returns_none_when_all_completed(self, db_session):
+        """Test that None is returned when all tasks are completed."""
+        user = User(telegram_user_id="33333", current_level="B1", is_active=True)
+        db_session.add(user)
+        db_session.commit()
+
+        task1 = Task(
+            level="B1",
+            type="text",
+            title="Task 1",
+            content_text="Content 1",
+            status="published",
+        )
+        db_session.add(task1)
+        db_session.commit()
+
+        # Mark task1 as completed
+        progress = Progress(
+            user_id=user.id,
+            task_id=task1.id,
+            answers={},
+            score=10.0,
+            percentage_correct=100.0,
+        )
+        db_session.add(progress)
+        db_session.commit()
+
+        service = TaskDeliveryService()
+        selected_task = service.select_task_for_user(user.id, db_session)
+
+        # Should return None since all tasks are completed
+        assert selected_task is None
 
     def test_get_tasks_by_level_invalid_level(self, db_session):
         """Test that invalid level raises error."""

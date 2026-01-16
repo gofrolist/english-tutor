@@ -3,12 +3,14 @@
 Service for delivering learning tasks to users based on their proficiency level.
 """
 
+import random
 from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
+from src.english_tutor.models.progress import Progress
 from src.english_tutor.models.task import Task, TaskStatus, TaskType
 from src.english_tutor.models.user import User
 from src.english_tutor.utils.exceptions import TaskDeliveryError
@@ -117,7 +119,8 @@ class TaskDeliveryService:
     def select_task_for_user(self, user_id: UUID, db: Session) -> Optional[Task]:
         """Select a task for a user based on their level.
 
-        Selects a random published task appropriate for the user's level.
+        Selects a random published task appropriate for the user's level,
+        excluding tasks that the user has already completed.
 
         Args:
             user_id: User ID
@@ -144,8 +147,24 @@ class TaskDeliveryService:
             logger.warning("No tasks available for user level", extra={"level": user.current_level})
             return None
 
-        # For now, select the first task (can be enhanced with randomization)
-        selected_task = tasks[0]
+        # Get IDs of tasks the user has already completed
+        completed_task_ids = {
+            row[0] for row in db.query(Progress.task_id).filter(Progress.user_id == user_id).all()
+        }
+
+        # Filter out completed tasks
+        available_tasks = [task for task in tasks if task.id not in completed_task_ids]
+
+        # If all tasks are completed, return None
+        if not available_tasks:
+            logger.info(
+                "All tasks completed for user level",
+                extra={"user_id": str(user_id), "level": user.current_level},
+            )
+            return None
+
+        # Randomly select from available tasks
+        selected_task = random.choice(available_tasks)
 
         logger.info(
             "Task selected for user",
@@ -153,6 +172,8 @@ class TaskDeliveryService:
                 "user_id": str(user_id),
                 "task_id": str(selected_task.id),
                 "level": user.current_level,
+                "available_tasks_count": len(available_tasks),
+                "total_tasks_count": len(tasks),
             },
         )
 
