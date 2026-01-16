@@ -17,7 +17,10 @@ primary_region = "lax"
     path = "/"
 
 [processes]
+  # FastAPI HTTP server (auto-starts/stops based on traffic)
   app = "/app/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080"
+  # Telegram bot (must run continuously for polling)
+  bot = "/app/.venv/bin/python run_bot.py"
 
 [deploy]
   release_command = "/app/.venv/bin/alembic upgrade head"
