@@ -78,6 +78,7 @@ class TestAssessmentHandlers:
             answer_options=["Option 1", "Option 2"],
             correct_answer=0,
             weight=1.0,
+            sheets_row_id="test-row-001",
         )
         db_session.add(question)
         db_session.commit()
@@ -101,7 +102,7 @@ class TestAssessmentHandlers:
         # Verify message was sent
         mock_update_message.message.reply_text.assert_called_once()
         call_args = mock_update_message.message.reply_text.call_args
-        assert "Прогресс: 1/1" in call_args[0][0]
+        assert "Вопрос 1/1" in call_args[0][0]
         assert "Test question?" in call_args[0][0]
 
     @pytest.mark.asyncio
@@ -121,6 +122,7 @@ class TestAssessmentHandlers:
             answer_options=["Option 1", "Option 2"],
             correct_answer=0,
             weight=1.0,
+            sheets_row_id="test-row-002",
         )
         db_session.add(question)
         db_session.commit()
@@ -146,7 +148,7 @@ class TestAssessmentHandlers:
         # Verify message was sent via callback_query.message
         mock_update_callback_query.callback_query.message.reply_text.assert_called_once()
         call_args = mock_update_callback_query.callback_query.message.reply_text.call_args
-        assert "Прогресс: 1/1" in call_args[0][0]
+        assert "Вопрос 1/1" in call_args[0][0]
         assert "Test question?" in call_args[0][0]
 
     @pytest.mark.asyncio
@@ -165,6 +167,7 @@ class TestAssessmentHandlers:
             answer_options=["A", "B"],
             correct_answer=0,
             weight=1.0,
+            sheets_row_id="test-row-003",
         )
         question2 = AssessmentQuestion(
             level="A1",
@@ -172,6 +175,7 @@ class TestAssessmentHandlers:
             answer_options=["C", "D"],
             correct_answer=1,
             weight=1.0,
+            sheets_row_id="test-row-004",
         )
         db_session.add_all([question1, question2])
         db_session.commit()
@@ -212,7 +216,7 @@ class TestAssessmentHandlers:
         # (since update.message is None in callback queries)
         mock_update_callback_query.callback_query.message.reply_text.assert_called_once()
         call_args = mock_update_callback_query.callback_query.message.reply_text.call_args
-        assert "Прогресс: 2/2" in call_args[0][0]
+        assert "Вопрос 2/2" in call_args[0][0]
         assert "Question 2?" in call_args[0][0]
 
         # Verify answer was stored (query fresh from DB since handler closed its session)
@@ -238,6 +242,7 @@ class TestAssessmentHandlers:
             answer_options=["A", "B"],
             correct_answer=0,
             weight=1.0,
+            sheets_row_id="test-row-005",
         )
         db_session.add(question)
         db_session.commit()
@@ -370,6 +375,7 @@ class TestAssessmentHandlers:
             answer_options=["A", "B"],
             correct_answer=0,
             weight=1.0,
+            sheets_row_id="test-row-001",  # Required for question selection
         )
         db_session.add(question)
         db_session.commit()
@@ -421,6 +427,7 @@ class TestAssessmentHandlers:
             answer_options=["A", "B"],
             correct_answer=0,
             weight=1.0,
+            sheets_row_id="test-row-006",
         )
         db_session.add(question)
         db_session.commit()
