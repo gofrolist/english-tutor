@@ -1,7 +1,7 @@
 # Research: English Tutor Telegram Bot
 
-**Created**: 2026-01-10  
-**Feature**: English Tutor Telegram Bot  
+**Created**: 2026-01-10
+**Feature**: English Tutor Telegram Bot
 **Phase**: Phase 0 - Outline & Research
 
 ## Research Decisions

@@ -1,8 +1,8 @@
 # Feature Specification: English Tutor Telegram Bot
 
-**Feature Branch**: `001-english-tutor-bot`  
-**Created**: 2026-01-10  
-**Status**: Draft  
+**Feature Branch**: `001-english-tutor-bot`
+**Created**: 2026-01-10
+**Status**: Draft
 **Input**: User description: "Create a telegram bot for English learning/tutoring."
 
 ## Clarifications

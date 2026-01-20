@@ -13,14 +13,14 @@ Technical approach: Python 3.13 backend with FastAPI and python-telegram-bot lib
 
 ## Technical Context
 
-**Language/Version**: Python 3.13  
-**Primary Dependencies**: FastAPI, python-telegram-bot (v20+), SQLAlchemy ORM, Supabase (PostgreSQL), Alembic (migrations)  
-**Storage**: Supabase (PostgreSQL) database for user data, assessments, tasks, questions, content metadata, and progress tracking  
-**Testing**: pytest with coverage requirements (minimum 80%)  
-**Target Platform**: Linux server (fly.io)  
-**Project Type**: Backend (telegram bot)  
-**Performance Goals**: Support 1000 concurrent users without performance degradation; content updates available within 5 minutes; task delivery under 2 seconds p95  
-**Constraints**: External content management without redeployment; Docker-based containerization; OpenAPI specification required; type safety (pyright checks mandatory)  
+**Language/Version**: Python 3.13
+**Primary Dependencies**: FastAPI, python-telegram-bot (v20+), SQLAlchemy ORM, Supabase (PostgreSQL), Alembic (migrations)
+**Storage**: Supabase (PostgreSQL) database for user data, assessments, tasks, questions, content metadata, and progress tracking
+**Testing**: pytest with coverage requirements (minimum 80%)
+**Target Platform**: Linux server (fly.io)
+**Project Type**: Backend (telegram bot)
+**Performance Goals**: Support 1000 concurrent users without performance degradation; content updates available within 5 minutes; task delivery under 2 seconds p95
+**Constraints**: External content management without redeployment; Docker-based containerization; OpenAPI specification required; type safety (pyright checks mandatory)
 **Scale/Scope**: 1000+ concurrent users; multiple English levels (A1-C2); three content types (text/audio/video); hierarchical content organization
 
 ## Constitution Check

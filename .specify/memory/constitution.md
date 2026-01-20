@@ -46,14 +46,14 @@ Structured logging MUST be implemented for all user interactions, content delive
 
 ## Technology Stack
 
-**Language/Version**: Python 3.13  
-**Framework**: FastAPI for bot backend (Telegram Bot API integration)  
-**API Specification**: OpenAPI (FastAPI auto-generates OpenAPI schema)  
-**Testing**: pytest with coverage requirements (minimum 80%)  
-**Code Quality**: ruff for linting and formatting, pyright for type checking  
-**Dependency Management**: uv  
-**Storage**: [TBD - Database solution for user data and content]  
-**Deployment**: 
+**Language/Version**: Python 3.13
+**Framework**: FastAPI for bot backend (Telegram Bot API integration)
+**API Specification**: OpenAPI (FastAPI auto-generates OpenAPI schema)
+**Testing**: pytest with coverage requirements (minimum 80%)
+**Code Quality**: ruff for linting and formatting, pyright for type checking
+**Dependency Management**: uv
+**Storage**: [TBD - Database solution for user data and content]
+**Deployment**:
 - Platform: fly.io
 - Container Registry: ghcr.io (GitHub Container Registry)
 - Containerization: Docker-based (existing Dockerfile structure)
@@ -62,10 +62,10 @@ Structured logging MUST be implemented for all user interactions, content delive
 
 ## Development Workflow
 
-**Code Review**: All changes MUST pass linting checks (ruff, pyright) and tests before merge.  
-**Testing Gate**: Test coverage MUST not decrease below 80% threshold.  
-**Type Safety**: Type hints MUST be used throughout codebase; pyright checks are mandatory.  
-**Content Management**: Content additions MUST follow the established level and type organization structure.  
+**Code Review**: All changes MUST pass linting checks (ruff, pyright) and tests before merge.
+**Testing Gate**: Test coverage MUST not decrease below 80% threshold.
+**Type Safety**: Type hints MUST be used throughout codebase; pyright checks are mandatory.
+**Content Management**: Content additions MUST follow the established level and type organization structure.
 **User Data Privacy**: User progression data and quiz results MUST be handled according to privacy requirements (details TBD).
 
 ## Governance
