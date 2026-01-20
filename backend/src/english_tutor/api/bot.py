@@ -9,6 +9,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 from src.english_tutor.api.bot.handlers.assessment import (
     assess_command,
     handle_assessment_answer,
+    handle_assessment_ready,
 )
 from src.english_tutor.api.bot.handlers.start import start_command
 from src.english_tutor.api.bot.handlers.tasks import (
@@ -38,6 +39,9 @@ def get_bot_application() -> Application:
         # Register handlers
         bot_application.add_handler(CommandHandler("start", start_command))
         bot_application.add_handler(CommandHandler("assess", assess_command))
+        bot_application.add_handler(
+            CallbackQueryHandler(handle_assessment_ready, pattern="^start_assessment_ready_")
+        )
         bot_application.add_handler(
             CallbackQueryHandler(handle_assessment_answer, pattern="^answer_")
         )
