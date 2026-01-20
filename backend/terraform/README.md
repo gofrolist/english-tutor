@@ -8,7 +8,7 @@ This directory contains Terraform configuration to fully automate Google Cloud s
    ```bash
    # macOS
    brew install terraform
-   
+
    # Or download from: https://www.terraform.io/downloads
    ```
 
@@ -16,7 +16,7 @@ This directory contains Terraform configuration to fully automate Google Cloud s
    ```bash
    # macOS
    brew install google-cloud-sdk
-   
+
    # Or download from: https://cloud.google.com/sdk/docs/install
    ```
 

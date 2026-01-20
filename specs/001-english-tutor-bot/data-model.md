@@ -1,7 +1,7 @@
 # Data Model: English Tutor Telegram Bot
 
-**Created**: 2026-01-10  
-**Feature**: English Tutor Telegram Bot  
+**Created**: 2026-01-10
+**Feature**: English Tutor Telegram Bot
 **Phase**: Phase 1 - Design & Contracts
 
 ## Entity Overview
@@ -199,7 +199,7 @@ Content managers can create/update content in draft status, then review and publ
 - **Primary Keys**: UUID for all entities (better for distributed systems, avoids sequential ID issues)
 - **Timestamps**: `created_at` and `updated_at` on all entities for audit trail
 - **JSON Fields**: Use PostgreSQL JSONB for flexible data (answers, metadata, options)
-- **Indexes**: 
+- **Indexes**:
   - Foreign keys indexed
   - `telegram_user_id` unique index
   - Composite indexes for common query patterns (user_id + task_id, level + type)

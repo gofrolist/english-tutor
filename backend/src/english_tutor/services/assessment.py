@@ -164,9 +164,7 @@ class AssessmentService:
         # Extract question IDs
         selected_question_ids = [str(q.id) for q in selected_questions]
 
-        logger.info(
-            f"Selected {len(selected_question_ids)} assessment questions (all available)"
-        )
+        logger.info(f"Selected {len(selected_question_ids)} assessment questions (all available)")
 
         return selected_question_ids
 
