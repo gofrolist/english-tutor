@@ -138,46 +138,34 @@ class AssessmentService:
 
         return assessment
 
-    def _select_assessment_questions(self, db: Session, num_questions: int = 15) -> list[str]:
-        """Select balanced assessment questions across all levels.
+    def _select_assessment_questions(self, db: Session) -> list[str]:
+        """Select all assessment questions from the database.
 
         Strategy:
-        - Select 2-3 questions from each level (A1-C2)
-        - Return question IDs as strings for JSON storage, ordered sequentially by ID
+        - Select all questions from all levels (A1-C2)
+        - Return question IDs as strings for JSON storage, ordered sequentially by sheets_row_id
 
         Args:
             db: Database session
-            num_questions: Total number of questions to select (default: 15)
 
         Returns:
-            List of question IDs as strings, ordered sequentially by ID
+            List of question IDs as strings, ordered sequentially by sheets_row_id
         """
-        levels = ["A1", "A2", "B1", "B2", "C1", "C2"]
-        questions_per_level = max(2, num_questions // len(levels))
-        selected_question_ids = []
-
-        for level in levels:
-            # Get questions for this level, ordered by ID
-            questions = (
-                db.query(AssessmentQuestion)
-                .filter(AssessmentQuestion.level == level)
-                .order_by(AssessmentQuestion.id)
-                .limit(questions_per_level)
-                .all()
+        # Get all questions ordered by sheets_row_id
+        selected_questions = (
+            db.query(AssessmentQuestion)
+            .filter(
+                AssessmentQuestion.sheets_row_id.isnot(None),  # Only include synced questions
             )
+            .order_by(AssessmentQuestion.sheets_row_id)
+            .all()
+        )
 
-            for question in questions:
-                selected_question_ids.append(str(question.id))
-
-        # Sort by ID to ensure sequential order
-        selected_question_ids.sort(key=lambda x: UUID(x))
-
-        # Limit to requested number
-        if len(selected_question_ids) > num_questions:
-            selected_question_ids = selected_question_ids[:num_questions]
+        # Extract question IDs
+        selected_question_ids = [str(q.id) for q in selected_questions]
 
         logger.info(
-            f"Selected {len(selected_question_ids)} assessment questions across {len(levels)} levels"
+            f"Selected {len(selected_question_ids)} assessment questions (all available)"
         )
 
         return selected_question_ids
