@@ -159,23 +159,20 @@ async def send_assessment_question(
         # Send question
         question_number = current_question_index + 1
         total_questions = len(question_ids)
+        # Newlines from Google Sheets (\n) are preserved automatically in plain text
         message_text = f"Вопрос {question_number}/{total_questions}\n\n{question.question_text}"
 
         # Handle both message and callback query cases
-        # Note: Newlines from Google Sheets are preserved automatically
-        # Markdown formatting can be used in question_text if needed
         if update.message:
             await update.message.reply_text(
                 message_text,
                 reply_markup=reply_markup,
-                parse_mode="Markdown",  # Enable Markdown for formatting (bold, italic, code, etc.)
             )
         elif update.callback_query:
             # Send new message after callback query
             await update.callback_query.message.reply_text(
                 message_text,
                 reply_markup=reply_markup,
-                parse_mode="Markdown",  # Enable Markdown for formatting
             )
     finally:
         db.close()
