@@ -44,11 +44,6 @@ class AssessmentQuestion(Base):
         Integer, nullable=False, comment="Index of correct answer in answer_options"
     )
     weight = Column(Float, nullable=False, default=1.0, comment="Weight for scoring")
-    skill_type = Column(
-        String,
-        nullable=True,
-        comment="Type of skill tested: grammar, vocabulary, reading, listening",
-    )
     sheets_row_id = Column(
         String,
         nullable=True,

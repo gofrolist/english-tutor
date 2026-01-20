@@ -140,7 +140,6 @@ The "Assessment" sheet must have the following columns (in order):
 | `answer_options` | Yes | Answer options (see formats below) | `"hi|hello|goodbye|thanks"` or `["hi","hello","goodbye","thanks"]` |
 | `correct_answer` | Yes | Index of correct answer (0-based) | `0` (first option), `1` (second option) |
 | `weight` | No | Weight for scoring (default: 1.0) | `1.0`, `1.5`, `2.0` |
-| `skill_type` | No | Type of skill tested | `grammar`, `vocabulary`, `reading`, `listening` |
 
 ### Example Assessment Row
 

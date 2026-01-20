@@ -3,12 +3,10 @@
 Business logic for assessment quiz, scoring, and level determination.
 """
 
-import random
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.english_tutor.models.assessment import Assessment, AssessmentStatus
@@ -145,26 +143,25 @@ class AssessmentService:
 
         Strategy:
         - Select 2-3 questions from each level (A1-C2)
-        - Ensure variety in skill types if available
-        - Return question IDs as strings for JSON storage
+        - Return question IDs as strings for JSON storage, ordered sequentially by ID
 
         Args:
             db: Database session
             num_questions: Total number of questions to select (default: 15)
 
         Returns:
-            List of question IDs as strings
+            List of question IDs as strings, ordered sequentially by ID
         """
         levels = ["A1", "A2", "B1", "B2", "C1", "C2"]
         questions_per_level = max(2, num_questions // len(levels))
         selected_question_ids = []
 
         for level in levels:
-            # Get questions for this level
+            # Get questions for this level, ordered by ID
             questions = (
                 db.query(AssessmentQuestion)
                 .filter(AssessmentQuestion.level == level)
-                .order_by(func.random())
+                .order_by(AssessmentQuestion.id)
                 .limit(questions_per_level)
                 .all()
             )
@@ -172,8 +169,8 @@ class AssessmentService:
             for question in questions:
                 selected_question_ids.append(str(question.id))
 
-        # Shuffle to randomize order
-        random.shuffle(selected_question_ids)
+        # Sort by ID to ensure sequential order
+        selected_question_ids.sort(key=lambda x: UUID(x))
 
         # Limit to requested number
         if len(selected_question_ids) > num_questions:

@@ -458,7 +458,6 @@ class GoogleSheetsService:
         - answer_options (comma-separated or JSON array)
         - correct_answer (index, 0-based)
         - weight (default 1.0)
-        - skill_type (optional: grammar, vocabulary, reading, listening)
         - row_id (for tracking updates)
 
         Args:
@@ -499,7 +498,6 @@ class GoogleSheetsService:
                 "answer_options",
                 "correct_answer",
                 "weight",
-                "skill_type",
             ]
 
             # Map headers to indices
@@ -563,7 +561,6 @@ class GoogleSheetsService:
         answer_options_str = get_cell("answer_options")
         correct_answer_str = get_cell("correct_answer")
         weight_str = get_cell("weight", "1.0")
-        skill_type = get_cell("skill_type")
         row_id = get_cell("row_id", str(row_idx))
 
         # Validate required fields
@@ -612,6 +609,5 @@ class GoogleSheetsService:
             "answer_options": answer_options,
             "correct_answer": correct_answer,
             "weight": weight,
-            "skill_type": skill_type if skill_type else None,
             "row_id": row_id,
         }

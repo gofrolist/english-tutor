@@ -156,10 +156,20 @@ async def send_assessment_question(
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Send question
+        # Send question with progress indicator
         question_number = current_question_index + 1
         total_questions = len(question_ids)
-        message_text = f"Вопрос {question_number}/{total_questions}\n\n{question.question_text}"
+        progress_percentage = int((question_number / total_questions) * 100)
+
+        # Simple progress bar (10 blocks)
+        filled_blocks = int((question_number / total_questions) * 10)
+        progress_bar = "█" * filled_blocks + "░" * (10 - filled_blocks)
+
+        message_text = (
+            f"📊 Прогресс: {question_number}/{total_questions} ({progress_percentage}%)\n"
+            f"{progress_bar}\n\n"
+            f"❓ {question.question_text}"
+        )
 
         # Handle both message and callback query cases
         if update.message:

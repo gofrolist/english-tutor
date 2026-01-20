@@ -513,7 +513,6 @@ class ContentSyncService:
             answer_options=question_data["answer_options"],
             correct_answer=question_data["correct_answer"],
             weight=question_data.get("weight", 1.0),
-            skill_type=question_data.get("skill_type"),
             sheets_row_id=row_id,
         )
         db.add(question)
@@ -538,6 +537,5 @@ class ContentSyncService:
         question.answer_options = question_data["answer_options"]
         question.correct_answer = question_data["correct_answer"]
         question.weight = question_data.get("weight", 1.0)
-        question.skill_type = question_data.get("skill_type")
         question.sheets_row_id = row_id
         question.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)

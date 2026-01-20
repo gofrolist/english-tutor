@@ -101,7 +101,7 @@ class TestAssessmentHandlers:
         # Verify message was sent
         mock_update_message.message.reply_text.assert_called_once()
         call_args = mock_update_message.message.reply_text.call_args
-        assert "Вопрос 1/1" in call_args[0][0]
+        assert "Прогресс: 1/1" in call_args[0][0]
         assert "Test question?" in call_args[0][0]
 
     @pytest.mark.asyncio
@@ -146,7 +146,7 @@ class TestAssessmentHandlers:
         # Verify message was sent via callback_query.message
         mock_update_callback_query.callback_query.message.reply_text.assert_called_once()
         call_args = mock_update_callback_query.callback_query.message.reply_text.call_args
-        assert "Вопрос 1/1" in call_args[0][0]
+        assert "Прогресс: 1/1" in call_args[0][0]
         assert "Test question?" in call_args[0][0]
 
     @pytest.mark.asyncio
@@ -212,7 +212,7 @@ class TestAssessmentHandlers:
         # (since update.message is None in callback queries)
         mock_update_callback_query.callback_query.message.reply_text.assert_called_once()
         call_args = mock_update_callback_query.callback_query.message.reply_text.call_args
-        assert "Вопрос 2/2" in call_args[0][0]
+        assert "Прогресс: 2/2" in call_args[0][0]
         assert "Question 2?" in call_args[0][0]
 
         # Verify answer was stored (query fresh from DB since handler closed its session)
