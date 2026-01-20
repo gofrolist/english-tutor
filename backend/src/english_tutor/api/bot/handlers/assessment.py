@@ -85,15 +85,81 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user_data = _get_user_data(context)
         user_data["current_assessment_id"] = str(assessment.id)
 
+        # Get question count for the message
+        question_count = len(assessment.questions) if assessment.questions else 0
+
         await update.message.reply_text(
-            "Отлично! Давайте оценим ваш уровень английского.\n\n"
-            "Я задам вам несколько вопросов. "
-            "Пожалуйста, отвечайте на каждый вопрос, выбирая один из вариантов.\n\n"
-            "Готовы? Начинаем!"
+            f"Тебя ждут {question_count} вопросов, сложность которых растёт—от простых к более сложным.\n\n"
+            "Если первые покажутся слишком простыми—не расслабляйся!😁 Прибереги силы для тех, что идут дальше :)\n\n"
+            "Это не экзамен, а просто способ понять, что у тебя уже получается хорошо, а над чем нам стоит поработать!😊"
         )
 
+        # Ask if user is ready
+        keyboard = [
+            [InlineKeyboardButton("YES!", callback_data=f"start_assessment_ready_{assessment.id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            "Are u ready?😏",
+            reply_markup=reply_markup,
+        )
+    finally:
+        db.close()
+
+
+async def handle_assessment_ready(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Handle assessment ready confirmation callback.
+
+    Args:
+        update: Telegram update object.
+        context: Bot context.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    user_telegram_id = str(update.effective_user.id)
+
+    log_user_interaction(
+        logger,
+        user_telegram_id,
+        "assessment_ready",
+    )
+
+    session_local = get_session_local()
+    db = session_local()
+
+    try:
+        # Extract assessment ID from callback data
+        # Format: "start_assessment_ready_{assessment_id}"
+        callback_data = query.data
+        parts = callback_data.split("_")
+        if len(parts) != 4:
+            await query.edit_message_text("Неверный формат данных.")
+            return
+
+        assessment_id_str = parts[3]
+        assessment_id = UUID(assessment_id_str)
+
+        # Verify assessment exists and is in progress
+        assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
+        if not assessment or assessment.status != AssessmentStatus.IN_PROGRESS:
+            await query.edit_message_text("Оценка не найдена или уже завершена.")
+            return
+
+        # Store assessment ID in context
+        user_data = _get_user_data(context)
+        user_data["current_assessment_id"] = str(assessment.id)
+        user_data["current_question_index"] = 0
+
+        # Edit the message to remove the button and send first question
+        await query.edit_message_text("Отлично! Начинаем! 🚀")
+
         # Send first question
-        await send_assessment_question(update, context, assessment.id, db)
+        await send_assessment_question(update, context, assessment_id, db)
     finally:
         db.close()
 
@@ -178,6 +244,35 @@ async def send_assessment_question(
         db.close()
 
 
+async def send_motivational_message(
+    update: Update,
+    question_number: int,
+) -> None:
+    """Send motivational message at specific question milestones.
+
+    Args:
+        update: Telegram update object.
+        question_number: The question number that was just answered (1-indexed).
+    """
+    motivational_message = None
+
+    if question_number == 5:
+        motivational_message = "Отлично!\nLet's keep going—ты прекрасно справляешься!"
+    elif question_number == 20:
+        motivational_message = (
+            "Ты замечательно справляешься!\nIf something feels hard—don't worry, it's totally okay!"
+        )
+    elif question_number == 33:
+        motivational_message = "Yay!! Половина вопросов уже позади!🥳\nПродолжаем!"
+    elif question_number == 55:
+        motivational_message = "Осталось совсем чуть-чуть!\nСовсем скоро узнаем твой уровень😌"
+
+    if motivational_message:
+        query = update.callback_query
+        if query and query.message:
+            await query.message.reply_text(motivational_message)
+
+
 async def handle_assessment_answer(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -258,6 +353,12 @@ async def handle_assessment_answer(
         if question_index + 1 < len(question_ids):
             # Send next question
             await query.answer("Ответ записан!")
+
+            # Send motivational messages at specific milestones
+            # question_index is 0-indexed, so question_number = question_index + 1
+            question_number = question_index + 1
+            await send_motivational_message(update, question_number)
+
             await send_assessment_question(update, context, assessment_id, db)
         else:
             # All questions answered, complete assessment
