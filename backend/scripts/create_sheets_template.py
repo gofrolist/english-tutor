@@ -303,7 +303,6 @@ def create_template_sheet(
         "answer_options",
         "correct_answer",
         "weight",
-        "skill_type",
     ]
 
     assessment_example = [
@@ -314,7 +313,6 @@ def create_template_sheet(
             "hi|hello|goodbye|thanks",
             "1",
             "1.0",
-            "vocabulary",
         ],
         [
             "assess-002",
@@ -323,7 +321,6 @@ def create_template_sheet(
             "am,is,are,be",
             "0",
             "1.0",
-            "grammar",
         ],
         [
             "assess-003",
@@ -332,7 +329,6 @@ def create_template_sheet(
             "go,goes,going,went",
             "1",
             "1.0",
-            "grammar",
         ],
         [
             "assess-004",
@@ -341,7 +337,6 @@ def create_template_sheet(
             "go,went,gone,going",
             "1",
             "1.5",
-            "grammar",
         ],
     ]
 
@@ -349,7 +344,7 @@ def create_template_sheet(
         # Headers
         sheets_service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
-            range="Assessment!A1:G1",
+            range="Assessment!A1:F1",
             valueInputOption="RAW",
             body={"values": [assessment_headers]},
         ).execute()
@@ -383,7 +378,7 @@ def create_template_sheet(
         if assessment_example:
             sheets_service.spreadsheets().values().update(
                 spreadsheetId=spreadsheet_id,
-                range="Assessment!A2:G5",
+                range="Assessment!A2:F5",
                 valueInputOption="RAW",
                 body={"values": assessment_example},
             ).execute()
