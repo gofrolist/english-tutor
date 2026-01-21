@@ -1,6 +1,11 @@
 app = "english-tutor"
 primary_region = "lax"
 
+[env]
+  DEBUG = "false"
+  TELEGRAM_WEBHOOK_URL = "https://english-tutor.fly.dev"
+  GOOGLE_CREDENTIALS_PATH = "/app/credentials.json"
+
 [http_service]
   internal_port = 8080
   force_https = true

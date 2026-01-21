@@ -104,11 +104,5 @@ async def handle_start_continue(
     )
 
     # Start assessment
-    # assess_command expects update.message, so we temporarily set it from callback query
-    original_message = update.message
-    update.message = query.message
-    try:
-        await assess_command(update, context)
-    finally:
-        # Restore original message (might be None)
-        update.message = original_message
+    # assess_command now uses update.effective_message which works for both messages and callback queries
+    await assess_command(update, context)
