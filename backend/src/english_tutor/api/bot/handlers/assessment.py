@@ -28,6 +28,36 @@ def _get_user_data(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
     return context.user_data
 
 
+def _pluralize_question(count: int) -> str:
+    """Get correct plural form of 'вопрос' based on count.
+
+    Rules for Russian pluralization:
+    - 1, 21, 31, 41, 51, 61, 71, 81, 91, 101... → "вопрос"
+    - 2, 3, 4, 22, 23, 24, 32, 33, 34... → "вопроса"
+    - 5-20, 25-30, 35-40... → "вопросов"
+
+    Args:
+        count: Number of questions.
+
+    Returns:
+        Correct plural form: "вопрос", "вопроса", or "вопросов".
+    """
+    remainder_10 = count % 10
+    remainder_100 = count % 100
+
+    # Special cases for 11-14 (always "вопросов")
+    if 11 <= remainder_100 <= 14:
+        return "вопросов"
+
+    # Cases based on last digit
+    if remainder_10 == 1:
+        return "вопрос"
+    elif 2 <= remainder_10 <= 4:
+        return "вопроса"
+    else:
+        return "вопросов"
+
+
 async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /assess command to initiate assessment.
 
@@ -88,9 +118,10 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # Get question count for the message
         question_count = len(assessment.questions) if assessment.questions else 0
+        question_word = _pluralize_question(question_count)
 
         await update.message.reply_text(
-            f"Тебя ждут {question_count} вопросов, сложность которых растёт—от простых к более сложным.\n\n"
+            f"Тебя ждут {question_count} {question_word}, сложность которых растёт—от простых к более сложным.\n\n"
             "Если первые покажутся слишком простыми—не расслабляйся!😁 Прибереги силы для тех, что идут дальше :)\n\n"
             "Это не экзамен, а просто способ понять, что у тебя уже получается хорошо, а над чем нам стоит поработать!😊"
         )
