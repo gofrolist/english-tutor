@@ -86,6 +86,11 @@ API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
 API_PORT: int = int(os.getenv("API_PORT", "8080"))
 DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
+# Telegram Webhook configuration
+# Set this to your public URL (e.g., https://your-app.fly.dev)
+# If not set, webhook mode will be disabled
+TELEGRAM_WEBHOOK_URL: Optional[str] = os.getenv("TELEGRAM_WEBHOOK_URL")
+
 # Initialize logging based on DEBUG setting
 log_level = "DEBUG" if DEBUG else "INFO"
 setup_logging(log_level=log_level)

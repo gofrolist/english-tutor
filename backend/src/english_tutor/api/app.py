@@ -6,13 +6,15 @@ This module initializes and configures the FastAPI application.
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 
+from src.english_tutor.api.bot import get_bot_application, remove_webhook, setup_webhook
 from src.english_tutor.api.content.questions import router as questions_router
 from src.english_tutor.api.content.questions_by_id import router as questions_by_id_router
 from src.english_tutor.api.content.tasks import router as tasks_router
 from src.english_tutor.api.sync import router as sync_router
-from src.english_tutor.config import DEBUG
+from src.english_tutor.config import DEBUG, TELEGRAM_WEBHOOK_URL
 from src.english_tutor.services.scheduler import start_scheduler, stop_scheduler
 from src.english_tutor.utils.logger import get_logger
 
@@ -77,12 +79,30 @@ async def lifespan(_app: FastAPI):
     # (release_command should handle this, but this ensures it happens)
     run_migrations()
 
+    # Set up Telegram webhook if webhook URL is configured
+    if TELEGRAM_WEBHOOK_URL:
+        webhook_path = "/webhook"
+        webhook_url = f"{TELEGRAM_WEBHOOK_URL.rstrip('/')}{webhook_path}"
+        try:
+            await setup_webhook(webhook_url)
+            logger.info(f"Telegram webhook configured at {webhook_url}")
+        except Exception as e:
+            logger.error(f"Failed to set up Telegram webhook: {e}", exc_info=True)
+    else:
+        logger.info("TELEGRAM_WEBHOOK_URL not set, webhook mode disabled")
+
     if os.getenv("ENABLE_SYNC_SCHEDULER", "false").lower() == "true":
         start_scheduler()
     try:
         yield
     finally:
         logger.info("FastAPI application shutting down")
+        # Remove webhook on shutdown
+        if TELEGRAM_WEBHOOK_URL:
+            try:
+                await remove_webhook()
+            except Exception as e:
+                logger.warning(f"Error removing webhook on shutdown: {e}")
         stop_scheduler()
 
 
@@ -111,3 +131,34 @@ async def root() -> dict[str, str]:
 async def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request) -> Response:
+    """Telegram webhook endpoint to receive updates.
+
+    This endpoint receives POST requests from Telegram with bot updates.
+    """
+    if not TELEGRAM_WEBHOOK_URL:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Webhook mode not configured"},
+        )
+
+    try:
+        bot_app = get_bot_application()
+        update_data = await request.json()
+
+        # Parse the update and process it
+        from telegram import Update
+
+        update = Update.de_json(update_data, bot_app.bot)
+        await bot_app.process_update(update)
+
+        return Response(status_code=200)
+    except Exception as e:
+        logger.error(f"Error processing webhook update: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error"},
+        )

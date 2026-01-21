@@ -12,7 +12,7 @@ from src.english_tutor.api.bot.handlers.assessment import (
     handle_assessment_answer,
     handle_assessment_ready,
 )
-from src.english_tutor.api.bot.handlers.start import start_command
+from src.english_tutor.api.bot.handlers.start import handle_start_continue, start_command
 from src.english_tutor.api.bot.handlers.tasks import (
     handle_task_answer,
     task_command,
@@ -41,6 +41,9 @@ def get_bot_application() -> Application:
         bot_application.add_handler(CommandHandler("start", start_command))
         bot_application.add_handler(CommandHandler("assess", assess_command))
         bot_application.add_handler(
+            CallbackQueryHandler(handle_start_continue, pattern="^start_continue$")
+        )
+        bot_application.add_handler(
             CallbackQueryHandler(handle_assessment_ready, pattern="^start_assessment_ready_")
         )
         bot_application.add_handler(
@@ -58,10 +61,40 @@ def get_bot_application() -> Application:
     return bot_application
 
 
-async def start_bot() -> None:
-    """Start the Telegram bot."""
+async def setup_webhook(webhook_url: str) -> None:
+    """Set up Telegram webhook.
+
+    Args:
+        webhook_url: Full URL where Telegram should send updates (e.g., https://your-domain.com/webhook).
+    """
     app = get_bot_application()
-    logger.info("Starting Telegram bot")
+    logger.info(f"Setting up Telegram webhook at {webhook_url}")
+    await app.initialize()
+    await app.start()
+    # Set webhook URL with Telegram
+    await app.bot.set_webhook(url=webhook_url)
+    logger.info("Telegram webhook set up successfully")
+
+
+async def remove_webhook() -> None:
+    """Remove Telegram webhook."""
+    if bot_application is not None:
+        logger.info("Removing Telegram webhook")
+        try:
+            await bot_application.bot.delete_webhook()
+            logger.info("Telegram webhook removed successfully")
+        except Exception as e:
+            logger.warning(f"Error removing webhook: {e}")
+        finally:
+            await bot_application.stop()
+            await bot_application.shutdown()
+            logger.info("Telegram bot stopped")
+
+
+async def start_bot() -> None:
+    """Start the Telegram bot in polling mode (for local development)."""
+    app = get_bot_application()
+    logger.info("Starting Telegram bot in polling mode")
     await app.initialize()
     await app.start()
     await app.updater.start_polling()

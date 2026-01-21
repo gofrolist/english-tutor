@@ -3,10 +3,11 @@
 Handles the initial bot interaction when a user starts a conversation.
 """
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from src.english_tutor.api.bot.handlers.assessment import assess_command
+from src.english_tutor.api.bot.utils import safe_answer_callback_query
 from src.english_tutor.config import get_session_local
 from src.english_tutor.models.user import User
 from src.english_tutor.utils.logger import get_logger, log_user_interaction
@@ -68,10 +69,46 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             "Поэтому давай начнём с короткого теста, чтобы понять твой уровень и подобрать задания именно под тебя!"
         )
 
-        await update.message.reply_text(welcome_message)
+        # Create inline keyboard with "Продолжаем!" button
+        keyboard = [[InlineKeyboardButton("Продолжаем!", callback_data="start_continue")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(welcome_message, reply_markup=reply_markup)
     finally:
         db.close()
 
-    # Automatically start assessment after welcome message
-    # assess_command will create its own database session
-    await assess_command(update, context)
+
+async def handle_start_continue(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Handle "Продолжаем!" button callback to start assessment.
+
+    Args:
+        update: Telegram update object.
+        context: Bot context.
+    """
+    query = update.callback_query
+    if not query:
+        return
+
+    # Answer query safely (may fail silently if expired)
+    await safe_answer_callback_query(query)
+
+    user_telegram_id = str(update.effective_user.id)
+
+    log_user_interaction(
+        logger,
+        user_telegram_id,
+        "start_continue",
+    )
+
+    # Start assessment
+    # assess_command expects update.message, so we temporarily set it from callback query
+    original_message = update.message
+    update.message = query.message
+    try:
+        await assess_command(update, context)
+    finally:
+        # Restore original message (might be None)
+        update.message = original_message
