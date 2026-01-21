@@ -73,6 +73,8 @@ def run_migrations() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Application lifespan (startup/shutdown)."""
+    import asyncio
+
     logger.info("FastAPI application starting up")
 
     # Run migrations on startup as a safety fallback
@@ -80,14 +82,22 @@ async def lifespan(_app: FastAPI):
     run_migrations()
 
     # Set up Telegram webhook if webhook URL is configured
+    # Do this in background task to avoid blocking startup
+    webhook_setup_task = None
     if TELEGRAM_WEBHOOK_URL:
         webhook_path = "/webhook"
         webhook_url = f"{TELEGRAM_WEBHOOK_URL.rstrip('/')}{webhook_path}"
-        try:
-            await setup_webhook(webhook_url)
-            logger.info(f"Telegram webhook configured at {webhook_url}")
-        except Exception as e:
-            logger.error(f"Failed to set up Telegram webhook: {e}", exc_info=True)
+
+        async def setup_webhook_background():
+            """Set up webhook in background to avoid blocking startup."""
+            try:
+                await setup_webhook(webhook_url)
+                logger.info(f"Telegram webhook configured at {webhook_url}")
+            except Exception as e:
+                logger.error(f"Failed to set up Telegram webhook: {e}", exc_info=True)
+
+        # Start webhook setup in background
+        webhook_setup_task = asyncio.create_task(setup_webhook_background())
     else:
         logger.info("TELEGRAM_WEBHOOK_URL not set, webhook mode disabled")
 
@@ -97,6 +107,13 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         logger.info("FastAPI application shutting down")
+        # Cancel webhook setup task if still running
+        if webhook_setup_task and not webhook_setup_task.done():
+            webhook_setup_task.cancel()
+            try:
+                await webhook_setup_task
+            except asyncio.CancelledError:
+                pass
         # Remove webhook on shutdown
         if TELEGRAM_WEBHOOK_URL:
             try:
