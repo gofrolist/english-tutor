@@ -3,6 +3,8 @@
 Shared fixtures for all tests.
 """
 
+import os
+
 import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.dialects.sqlite import base as sqlite_base
@@ -17,6 +19,11 @@ from src.english_tutor.models.progress import Progress  # noqa: F401
 from src.english_tutor.models.question import Question  # noqa: F401
 from src.english_tutor.models.task import Task  # noqa: F401
 from src.english_tutor.models.user import User  # noqa: F401
+
+# Set PTB_TIMEDELTA to opt-in to timedelta-based retry_after to avoid deprecation warnings
+# This must be set before any telegram imports
+if "PTB_TIMEDELTA" not in os.environ:
+    os.environ["PTB_TIMEDELTA"] = "1"
 
 
 # Patch SQLite to support JSONB by mapping it to JSON

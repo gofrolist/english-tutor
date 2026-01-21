@@ -4,6 +4,7 @@ This module initializes and configures the Telegram bot application.
 """
 
 from telegram import Update
+from telegram.error import BadRequest, NetworkError, RetryAfter, TimedOut
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from src.english_tutor.api.bot.handlers.assessment import (
@@ -80,13 +81,85 @@ async def stop_bot() -> None:
 async def handle_error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle errors in bot handlers.
 
+    Gracefully handles expired callback queries and other common Telegram API errors
+    that don't require user notification or error-level logging.
+
     Args:
         update: Telegram update object.
         context: Bot context.
     """
+    error = context.error
+    error_message = str(error).lower() if error else ""
+
+    # Handle expired callback queries gracefully (common when bot restarts)
+    if isinstance(error, BadRequest) and (
+        "query is too old" in error_message or "query id is invalid" in error_message
+    ):
+        logger.debug(
+            "Expired callback query handled gracefully",
+            extra={
+                "update_id": update.update_id if update else None,
+                "user_id": update.effective_user.id if update and update.effective_user else None,
+                "callback_query_id": (
+                    update.callback_query.id if update and update.callback_query else None
+                ),
+            },
+        )
+        return
+
+    # Handle message not modified errors (common when editing messages)
+    if isinstance(error, BadRequest) and "message is not modified" in error_message:
+        logger.debug(
+            "Message not modified (no changes detected)",
+            extra={
+                "update_id": update.update_id if update else None,
+                "user_id": update.effective_user.id if update and update.effective_user else None,
+            },
+        )
+        return
+
+    # Handle network errors and timeouts (these are transient)
+    # Note: BadRequest is a subclass of NetworkError, so we check it separately above
+    if isinstance(error, NetworkError) and not isinstance(error, BadRequest):
+        logger.warning(
+            "Network error occurred",
+            extra={
+                "update_id": update.update_id if update else None,
+                "user_id": update.effective_user.id if update and update.effective_user else None,
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+            },
+        )
+        return
+
+    if isinstance(error, TimedOut):
+        logger.warning(
+            "Network error occurred",
+            extra={
+                "update_id": update.update_id if update else None,
+                "user_id": update.effective_user.id if update and update.effective_user else None,
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+            },
+        )
+        return
+
+    # Handle rate limiting (Telegram will retry automatically)
+    if isinstance(error, RetryAfter):
+        logger.warning(
+            "Rate limited by Telegram API",
+            extra={
+                "update_id": update.update_id if update else None,
+                "user_id": update.effective_user.id if update and update.effective_user else None,
+                "retry_after": error.retry_after,
+            },
+        )
+        return
+
+    # Log all other errors as system errors
     log_system_error(
         logger,
-        context.error,
+        error,
         context={
             "update_id": update.update_id if update else None,
             "user_id": update.effective_user.id if update and update.effective_user else None,

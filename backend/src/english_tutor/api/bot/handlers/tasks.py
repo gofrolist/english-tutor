@@ -10,6 +10,7 @@ from uuid import UUID
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from src.english_tutor.api.bot.utils import safe_answer_callback_query, safe_edit_message_text
 from src.english_tutor.config import get_session_local
 from src.english_tutor.models.question import Question
 from src.english_tutor.models.task import Task, TaskType
@@ -238,7 +239,8 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context: Bot context.
     """
     query = update.callback_query
-    await query.answer()
+    # Answer query safely (may fail silently if expired)
+    await safe_answer_callback_query(query)
 
     user_telegram_id = str(update.effective_user.id)
     # Callback data format: "task_answer_{question_id}_{answer_index}"
@@ -261,14 +263,16 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         user = db.query(User).filter(User.telegram_user_id == user_telegram_id).first()
         if not user:
-            await query.edit_message_text("Пользователь не найден. Пожалуйста, начните с /start.")
+            await safe_edit_message_text(
+                query, "Пользователь не найден. Пожалуйста, начните с /start."
+            )
             return
 
         user_data = _get_user_data(context)
         task_id_str = user_data.get("current_task_id")
         if not task_id_str:
-            await query.edit_message_text(
-                "Активное задание не найдено. Введите /task, чтобы получить новое задание."
+            await safe_edit_message_text(
+                query, "Активное задание не найдено. Введите /task, чтобы получить новое задание."
             )
             return
 
@@ -276,7 +280,7 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         task = db.query(Task).filter(Task.id == task_id).first()
 
         if not task:
-            await query.edit_message_text("Задание не найдено.")
+            await safe_edit_message_text(query, "Задание не найдено.")
             return
 
         # Store answer
@@ -305,7 +309,8 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if current_question_idx < len(questions) - 1:
             # Send next question
             next_question = questions[current_question_idx + 1]
-            await query.edit_message_text(
+            await safe_edit_message_text(
+                query,
                 f"✓ Ответ записан!\n\n{next_question.question_text}",
                 reply_markup=InlineKeyboardMarkup(
                     [
@@ -324,8 +329,8 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     except (TaskDeliveryError, ValueError, Exception) as e:
         logger.error("Task answer handling error", extra={"error": str(e)})
-        await query.edit_message_text(
-            f"Произошла ошибка: {str(e)}\n\nПожалуйста, попробуйте снова."
+        await safe_edit_message_text(
+            query, f"Произошла ошибка: {str(e)}\n\nПожалуйста, попробуйте снова."
         )
     finally:
         db.close()
@@ -380,7 +385,8 @@ async def complete_task_and_send_feedback(
         if task and task.explanation:
             feedback_message += f"\n\n💡 **Объяснение:**\n{task.explanation}"
 
-        await update.callback_query.edit_message_text(
+        await safe_edit_message_text(
+            update.callback_query,
             feedback_message,
             parse_mode="Markdown",
         )
@@ -401,6 +407,7 @@ async def complete_task_and_send_feedback(
 
     except Exception as e:
         logger.error("Error completing task", extra={"error": str(e)})
-        await update.callback_query.edit_message_text(
-            "Произошла ошибка при завершении задания. Пожалуйста, попробуйте снова."
+        await safe_edit_message_text(
+            update.callback_query,
+            "Произошла ошибка при завершении задания. Пожалуйста, попробуйте снова.",
         )

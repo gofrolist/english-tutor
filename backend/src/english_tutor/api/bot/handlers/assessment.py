@@ -9,6 +9,7 @@ from uuid import UUID
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from src.english_tutor.api.bot.utils import safe_answer_callback_query, safe_edit_message_text
 from src.english_tutor.config import get_session_local
 from src.english_tutor.models.assessment import Assessment, AssessmentStatus
 from src.english_tutor.models.assessment_question import AssessmentQuestion
@@ -119,7 +120,8 @@ async def handle_assessment_ready(
         context: Bot context.
     """
     query = update.callback_query
-    await query.answer()
+    # Answer query safely (may fail silently if expired)
+    await safe_answer_callback_query(query)
 
     user_telegram_id = str(update.effective_user.id)
 
@@ -138,7 +140,7 @@ async def handle_assessment_ready(
         callback_data = query.data
         parts = callback_data.split("_")
         if len(parts) != 4:
-            await query.edit_message_text("Неверный формат данных.")
+            await safe_edit_message_text(query, "Неверный формат данных.")
             return
 
         assessment_id_str = parts[3]
@@ -147,7 +149,7 @@ async def handle_assessment_ready(
         # Verify assessment exists and is in progress
         assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
         if not assessment or assessment.status != AssessmentStatus.IN_PROGRESS:
-            await query.edit_message_text("Оценка не найдена или уже завершена.")
+            await safe_edit_message_text(query, "Оценка не найдена или уже завершена.")
             return
 
         # Store assessment ID in context
@@ -156,7 +158,7 @@ async def handle_assessment_ready(
         user_data["current_question_index"] = 0
 
         # Edit the message to remove the button and send first question
-        await query.edit_message_text("Отлично! Начинаем! 🚀")
+        await safe_edit_message_text(query, "Отлично! Начинаем! 🚀")
 
         # Send first question
         await send_assessment_question(update, context, assessment_id, db)
@@ -284,7 +286,8 @@ async def handle_assessment_answer(
         context: Bot context.
     """
     query = update.callback_query
-    await query.answer()
+    # Answer query safely (may fail silently if expired)
+    await safe_answer_callback_query(query)
 
     user_telegram_id = str(update.effective_user.id)
     answer_data = query.data  # Format: "answer_0", "answer_1", etc.
@@ -302,26 +305,30 @@ async def handle_assessment_answer(
     try:
         user = db.query(User).filter(User.telegram_user_id == user_telegram_id).first()
         if not user:
-            await query.edit_message_text("Пользователь не найден. Пожалуйста, начните с /start.")
+            await safe_edit_message_text(
+                query, "Пользователь не найден. Пожалуйста, начните с /start."
+            )
             return
 
         assessment_id_str = context.user_data.get("current_assessment_id")
         if not assessment_id_str:
-            await query.edit_message_text("Активная оценка не найдена. Введите /assess для начала.")
+            await safe_edit_message_text(
+                query, "Активная оценка не найдена. Введите /assess для начала."
+            )
             return
 
         assessment_id = UUID(assessment_id_str)
         assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
 
         if not assessment or assessment.status != AssessmentStatus.IN_PROGRESS:
-            await query.edit_message_text("Оценка не найдена или уже завершена.")
+            await safe_edit_message_text(query, "Оценка не найдена или уже завершена.")
             return
 
         # Extract question index and answer index from callback data
         # Format: "answer_{question_index}_{answer_index}"
         parts = answer_data.split("_")
         if len(parts) != 3:
-            await query.edit_message_text("Неверный формат ответа.")
+            await safe_edit_message_text(query, "Неверный формат ответа.")
             return
 
         question_index = int(parts[1])
@@ -330,7 +337,7 @@ async def handle_assessment_answer(
         # Get question ID from assessment
         question_ids = assessment.questions
         if question_index >= len(question_ids):
-            await query.edit_message_text("Неверный индекс вопроса.")
+            await safe_edit_message_text(query, "Неверный индекс вопроса.")
             return
 
         question_id_str = question_ids[question_index]
@@ -352,7 +359,7 @@ async def handle_assessment_answer(
         # Check if more questions remain
         if question_index + 1 < len(question_ids):
             # Send next question
-            await query.answer("Ответ записан!")
+            await safe_answer_callback_query(query, "Ответ записан!")
 
             # Send motivational messages at specific milestones
             # question_index is 0-indexed, so question_number = question_index + 1
@@ -362,7 +369,7 @@ async def handle_assessment_answer(
             await send_assessment_question(update, context, assessment_id, db)
         else:
             # All questions answered, complete assessment
-            await query.answer("Последний ответ записан!")
+            await safe_answer_callback_query(query, "Последний ответ записан!")
             await complete_and_deliver_result(update, context, assessment_id, db)
     finally:
         db.close()
@@ -386,7 +393,7 @@ async def complete_and_deliver_result(
         assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
         if not assessment:
             if update.callback_query:
-                await update.callback_query.edit_message_text("Оценка не найдена.")
+                await safe_edit_message_text(update.callback_query, "Оценка не найдена.")
             else:
                 await update.message.reply_text("Оценка не найдена.")
             return
@@ -430,7 +437,7 @@ async def complete_and_deliver_result(
         )
 
         if update.callback_query:
-            await update.callback_query.edit_message_text(result_message)
+            await safe_edit_message_text(update.callback_query, result_message)
         else:
             await update.message.reply_text(result_message)
 
