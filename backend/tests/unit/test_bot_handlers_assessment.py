@@ -31,6 +31,8 @@ class TestAssessmentHandlers:
         update.message = MagicMock(spec=Message)
         update.message.reply_text = AsyncMock()
         update.message.reply_text.return_value = MagicMock()
+        # Mock effective_message property to return message
+        type(update).effective_message = property(lambda self: self.message)
         update.effective_user = MagicMock(spec=TelegramUser)
         update.effective_user.id = 12345
         update.callback_query = None
@@ -47,6 +49,10 @@ class TestAssessmentHandlers:
         update.callback_query.message = MagicMock(spec=Message)
         update.callback_query.message.reply_text = AsyncMock()
         update.callback_query.data = "answer_0_1"
+        # Mock effective_message property to return callback_query.message
+        type(update).effective_message = property(
+            lambda self: self.callback_query.message if self.callback_query else None
+        )
         update.effective_user = MagicMock(spec=TelegramUser)
         update.effective_user.id = 12345
         return update

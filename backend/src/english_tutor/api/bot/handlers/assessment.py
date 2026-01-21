@@ -80,7 +80,9 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Get or create user
         user = db.query(User).filter(User.telegram_user_id == user_telegram_id).first()
         if not user:
-            await update.message.reply_text("Пожалуйста, сначала запустите бота командой /start.")
+            message = update.effective_message
+            if message:
+                await message.reply_text("Пожалуйста, сначала запустите бота командой /start.")
             return
 
         # Check for existing in-progress assessment and abandon it
@@ -120,22 +122,28 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         question_count = len(assessment.questions) if assessment.questions else 0
         question_word = _pluralize_question(question_count)
 
-        await update.message.reply_text(
-            f"Тебя ждут {question_count} {question_word}, сложность которых растёт—от простых к более сложным.\n\n"
-            "Если первые покажутся слишком простыми—не расслабляйся!😁 Прибереги силы для тех, что идут дальше :)\n\n"
-            "Это не экзамен, а просто способ понять, что у тебя уже получается хорошо, а над чем нам стоит поработать!😊"
-        )
+        message = update.effective_message
+        if message:
+            await message.reply_text(
+                f"Тебя ждут {question_count} {question_word}, сложность которых растёт—от простых к более сложным.\n\n"
+                "Если первые покажутся слишком простыми—не расслабляйся!😁 Прибереги силы для тех, что идут дальше :)\n\n"
+                "Это не экзамен, а просто способ понять, что у тебя уже получается хорошо, а над чем нам стоит поработать!😊"
+            )
 
-        # Ask if user is ready
-        keyboard = [
-            [InlineKeyboardButton("YES!", callback_data=f"start_assessment_ready_{assessment.id}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+            # Ask if user is ready
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "YES!", callback_data=f"start_assessment_ready_{assessment.id}"
+                    )
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(
-            "Are u ready?😏",
-            reply_markup=reply_markup,
-        )
+            await message.reply_text(
+                "Are u ready?😏",
+                reply_markup=reply_markup,
+            )
     finally:
         db.close()
 
@@ -557,10 +565,11 @@ async def complete_and_deliver_result(
             "Введите /task, чтобы получить первое задание."
         )
 
+        message = update.effective_message
         if update.callback_query:
             await safe_edit_message_text(update.callback_query, result_message)
-        else:
-            await update.message.reply_text(result_message)
+        elif message:
+            await message.reply_text(result_message)
 
         # Clear assessment from context
         context.user_data.pop("current_assessment_id", None)
