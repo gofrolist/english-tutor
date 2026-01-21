@@ -287,6 +287,7 @@ async def handle_assessment_answer(
     """
     query = update.callback_query
     # Answer query safely (may fail silently if expired)
+    # Even if the query is expired, we can still process the answer
     await safe_answer_callback_query(query)
 
     user_telegram_id = str(update.effective_user.id)
@@ -310,12 +311,43 @@ async def handle_assessment_answer(
             )
             return
 
+        # Try to get assessment_id from context first (works when context is available)
         assessment_id_str = context.user_data.get("current_assessment_id")
+
+        # If context is lost (e.g., after restart), try to find active assessment in database
         if not assessment_id_str:
-            await safe_edit_message_text(
-                query, "Активная оценка не найдена. Введите /assess для начала."
+            active_assessment = (
+                db.query(Assessment)
+                .filter(
+                    Assessment.user_id == user.id,
+                    Assessment.status == AssessmentStatus.IN_PROGRESS,
+                )
+                .order_by(Assessment.started_at.desc())
+                .first()
             )
-            return
+
+            if active_assessment:
+                # Restore context from database
+                assessment_id_str = str(active_assessment.id)
+                user_data = _get_user_data(context)
+                user_data["current_assessment_id"] = assessment_id_str
+                # Calculate current question index from answers
+                if active_assessment.answers:
+                    user_data["current_question_index"] = len(active_assessment.answers)
+                else:
+                    user_data["current_question_index"] = 0
+                logger.info(
+                    "Restored assessment context from database",
+                    extra={
+                        "user_id": str(user.id),
+                        "assessment_id": assessment_id_str,
+                    },
+                )
+            else:
+                await safe_edit_message_text(
+                    query, "Активная оценка не найдена. Введите /assess для начала."
+                )
+                return
 
         assessment_id = UUID(assessment_id_str)
         assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
