@@ -363,12 +363,33 @@ async def handle_assessment_answer(
             await safe_edit_message_text(query, "Неверный формат ответа.")
             return
 
-        question_index = int(parts[1])
-        answer_index = int(parts[2])
+        try:
+            question_index = int(parts[1])
+            answer_index = int(parts[2])
+        except (ValueError, IndexError) as e:
+            logger.error(
+                "Invalid callback data format",
+                extra={
+                    "user_id": user_telegram_id,
+                    "answer_data": answer_data,
+                    "error": str(e),
+                },
+            )
+            await safe_edit_message_text(query, "Неверный формат ответа.")
+            return
 
         # Get question ID from assessment
         question_ids = assessment.questions
         if question_index >= len(question_ids):
+            logger.warning(
+                "Question index out of range",
+                extra={
+                    "user_id": user_telegram_id,
+                    "assessment_id": str(assessment_id),
+                    "question_index": question_index,
+                    "total_questions": len(question_ids),
+                },
+            )
             await safe_edit_message_text(query, "Неверный индекс вопроса.")
             return
 
@@ -382,7 +403,21 @@ async def handle_assessment_answer(
         updated_answers = dict(current_answers)
         updated_answers[question_id_str] = answer_index
         assessment.answers = updated_answers
-        db.commit()
+
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(
+                "Failed to commit answer to database",
+                extra={
+                    "user_id": user_telegram_id,
+                    "assessment_id": str(assessment_id),
+                    "question_id": question_id_str,
+                    "error": str(e),
+                },
+                exc_info=True,
+            )
+            raise
 
         # Update context
         user_data = _get_user_data(context)
@@ -403,6 +438,29 @@ async def handle_assessment_answer(
             # All questions answered, complete assessment
             await safe_answer_callback_query(query, "Последний ответ записан!")
             await complete_and_deliver_result(update, context, assessment_id, db)
+    except Exception as e:
+        # Log any unexpected errors to help diagnose silent failures
+        logger.error(
+            "Unexpected error in handle_assessment_answer",
+            extra={
+                "user_id": user_telegram_id,
+                "answer_data": answer_data,
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+            },
+            exc_info=True,
+        )
+        # Try to send error message to user if possible
+        try:
+            await safe_edit_message_text(
+                query,
+                "Произошла ошибка при обработке ответа. Пожалуйста, попробуйте снова или начните заново с /assess.",
+            )
+        except Exception:
+            # If we can't send message, at least log it
+            logger.error("Failed to send error message to user", exc_info=True)
+        # Re-raise to let error handler process it
+        raise
     finally:
         db.close()
 
