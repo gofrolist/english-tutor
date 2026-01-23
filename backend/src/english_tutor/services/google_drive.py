@@ -120,6 +120,44 @@ class GoogleDriveService:
         # For large files, Google may require confirmation, so we use the export format
         return f"https://drive.google.com/uc?export=download&id={file_id}"
 
+    def download_file_content(self, file_id: str) -> bytes:
+        """Download file content from Google Drive as bytes.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            File content as bytes
+
+        Raises:
+            ContentManagementError: If file download fails
+        """
+        try:
+            request = self.service.files().get_media(fileId=file_id)
+            from io import BytesIO
+
+            file_content = BytesIO()
+            downloader = self._get_media_downloader(request, file_content)
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+                if status:
+                    logger.debug(f"Download progress: {int(status.progress() * 100)}%")
+
+            return file_content.getvalue()
+        except HttpError as e:
+            logger.error(f"Google Drive API error downloading file {file_id}: {e}")
+            raise ContentManagementError(f"Failed to download file: {e}") from e
+        except Exception as e:
+            logger.error(f"Unexpected error downloading file {file_id}: {e}")
+            raise ContentManagementError(f"Failed to download file: {e}") from e
+
+    def _get_media_downloader(self, request, file_content):
+        """Get media downloader for Google Drive API."""
+        from googleapiclient.http import MediaIoBaseDownload
+
+        return MediaIoBaseDownload(file_content, request)
+
     def verify_file_access(self, file_id: str) -> bool:
         """Verify that a file is accessible.
 

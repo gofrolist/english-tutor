@@ -33,6 +33,10 @@ primary_region = "lax"
   cpus = 1
   memory = 256
 
+[[mounts]]
+  source = "media_cache"
+  destination = "/app/data"
+
 [[files]]
   guest_path = "/app/credentials.json"
   secret_name = "GOOGLE_CREDENTIALS"
