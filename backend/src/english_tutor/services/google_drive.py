@@ -4,7 +4,7 @@ This service retrieves public URLs for files stored in Google Drive.
 """
 
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -120,6 +120,35 @@ class GoogleDriveService:
         # For large files, Google may require confirmation, so we use the export format
         return f"https://drive.google.com/uc?export=download&id={file_id}"
 
+    def get_file_metadata(self, file_id: str) -> dict[str, Any]:
+        """Get file metadata from Google Drive.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            File metadata dict containing at least id, name, mimeType
+
+        Raises:
+            ContentManagementError: If metadata fetch fails
+        """
+        try:
+            return (
+                self.service.files()
+                .get(
+                    fileId=file_id,
+                    fields="id,name,mimeType,size",
+                    supportsAllDrives=True,
+                )
+                .execute()
+            )
+        except HttpError as e:
+            logger.error(f"Google Drive API error fetching metadata for file {file_id}: {e}")
+            raise ContentManagementError(f"Failed to get file metadata: {e}") from e
+        except Exception as e:
+            logger.error(f"Unexpected error fetching metadata for file {file_id}: {e}")
+            raise ContentManagementError(f"Failed to get file metadata: {e}") from e
+
     def download_file_content(self, file_id: str) -> bytes:
         """Download file content from Google Drive as bytes.
 
@@ -133,7 +162,7 @@ class GoogleDriveService:
             ContentManagementError: If file download fails
         """
         try:
-            request = self.service.files().get_media(fileId=file_id)
+            request = self.service.files().get_media(fileId=file_id, supportsAllDrives=True)
             from io import BytesIO
 
             file_content = BytesIO()
@@ -151,6 +180,21 @@ class GoogleDriveService:
         except Exception as e:
             logger.error(f"Unexpected error downloading file {file_id}: {e}")
             raise ContentManagementError(f"Failed to download file: {e}") from e
+
+    def download_file(self, file_id: str) -> tuple[bytes, str, str]:
+        """Download a file and return its content and metadata.
+
+        Returns:
+            (content_bytes, filename, mime_type)
+
+        Raises:
+            ContentManagementError: If download fails
+        """
+        metadata = self.get_file_metadata(file_id)
+        content = self.download_file_content(file_id)
+        name = str(metadata.get("name") or f"{file_id}")
+        mime = str(metadata.get("mimeType") or "application/octet-stream")
+        return content, name, mime
 
     def _get_media_downloader(self, request, file_content):
         """Get media downloader for Google Drive API."""
