@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from src.english_tutor.api.admin import router as admin_router
 from src.english_tutor.api.bot import get_bot_application, remove_webhook, setup_webhook
 from src.english_tutor.api.content.questions import router as questions_router
 from src.english_tutor.api.content.questions_by_id import router as questions_by_id_router
@@ -136,6 +137,7 @@ app.include_router(tasks_router)
 app.include_router(questions_router)
 app.include_router(questions_by_id_router)
 app.include_router(sync_router)
+app.include_router(admin_router)
 
 
 @app.get("/")
