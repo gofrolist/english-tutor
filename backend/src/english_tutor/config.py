@@ -91,6 +91,11 @@ DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 # If not set, webhook mode will be disabled
 TELEGRAM_WEBHOOK_URL: Optional[str] = os.getenv("TELEGRAM_WEBHOOK_URL")
 
+# Media cache configuration
+# Directory for caching audio/video files from Google Drive
+# Default: /app/data/media_cache (Fly.io persistent volume)
+MEDIA_CACHE_DIR: str = os.getenv("MEDIA_CACHE_DIR", "/app/data/media_cache")
+
 # Initialize logging based on DEBUG setting
 log_level = "DEBUG" if DEBUG else "INFO"
 setup_logging(log_level=log_level)

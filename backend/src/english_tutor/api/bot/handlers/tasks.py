@@ -4,9 +4,11 @@ Handles task requests, content delivery (text/audio/video), question delivery,
 answer collection, and feedback delivery.
 """
 
-from typing import Any
+import re
+from typing import Any, Optional
 from uuid import UUID
 
+import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -15,14 +17,95 @@ from src.english_tutor.config import get_session_local
 from src.english_tutor.models.question import Question
 from src.english_tutor.models.task import Task, TaskType
 from src.english_tutor.models.user import User
+from src.english_tutor.services.google_drive import GoogleDriveService
+from src.english_tutor.services.media_cache import MediaCacheService
 from src.english_tutor.services.task_completion import TaskCompletionService
 from src.english_tutor.services.task_delivery import TaskDeliveryService
-from src.english_tutor.utils.exceptions import TaskDeliveryError
+from src.english_tutor.utils.exceptions import ContentManagementError, TaskDeliveryError
 from src.english_tutor.utils.logger import get_logger, log_user_interaction
 
 logger = get_logger(__name__)
 task_delivery_service = TaskDeliveryService()
 task_completion_service = TaskCompletionService()
+media_cache_service = MediaCacheService()
+
+
+def _extract_google_drive_file_id(url: str) -> str | None:
+    """Extract Google Drive file ID from URL.
+
+    Args:
+        url: Google Drive URL
+
+    Returns:
+        File ID if URL is a Google Drive URL, None otherwise
+    """
+    # Pattern for URLs like: https://drive.google.com/uc?export=download&id=FILE_ID
+    match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", url)
+    if match:
+        return match.group(1)
+
+    # Pattern for URLs like: https://drive.google.com/file/d/FILE_ID/view
+    match = re.search(r"/file/d/([a-zA-Z0-9_-]+)", url)
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def _download_file_content(url: str, file_id: Optional[str] = None) -> bytes:
+    """Download file content from URL with caching support.
+
+    Tries to use cache first, then downloads from Google Drive API if URL is a Google Drive URL,
+    otherwise uses requests to download directly. Caches the result for future use.
+
+    Args:
+        url: File URL
+        file_id: Optional file identifier for caching (if None, uses URL as identifier)
+
+    Returns:
+        File content as bytes
+
+    Raises:
+        TaskDeliveryError: If download fails
+    """
+    # Use URL as cache key if file_id not provided
+    cache_key = file_id or url
+
+    # Check cache first
+    cached_content = media_cache_service.get(cache_key)
+    if cached_content is not None:
+        logger.info(f"Using cached file for: {cache_key[:20]}...")
+        return cached_content
+
+    # Try to extract Google Drive file ID
+    drive_file_id = _extract_google_drive_file_id(url)
+    if drive_file_id:
+        try:
+            drive_service = GoogleDriveService()
+            content = drive_service.download_file_content(drive_file_id)
+            # Cache the downloaded content
+            try:
+                media_cache_service.put(cache_key, content)
+            except ContentManagementError as cache_error:
+                logger.warning(f"Failed to cache file (continuing anyway): {cache_error}")
+            return content
+        except ContentManagementError as e:
+            logger.warning(f"Failed to download from Google Drive API, trying direct download: {e}")
+
+    # Fallback to direct download
+    try:
+        response = requests.get(url, timeout=30, allow_redirects=True)
+        response.raise_for_status()
+        content = response.content
+        # Cache the downloaded content
+        try:
+            media_cache_service.put(cache_key, content)
+        except ContentManagementError as cache_error:
+            logger.warning(f"Failed to cache file (continuing anyway): {cache_error}")
+        return content
+    except requests.RequestException as e:
+        logger.error(f"Failed to download file from URL: {e}")
+        raise TaskDeliveryError(f"Failed to download file: {e}") from e
 
 
 def _get_user_data(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
@@ -142,10 +225,23 @@ async def deliver_audio_task(update: Update, task: Task, db) -> None:
 
     # Send audio file
     if task.content_audio_url:
-        await update.message.reply_audio(
-            audio=task.content_audio_url,
-            caption=task.title,
-        )
+        try:
+            # Extract file ID for better caching
+            drive_file_id = _extract_google_drive_file_id(task.content_audio_url)
+            # Download file content (with caching)
+            audio_bytes = _download_file_content(task.content_audio_url, file_id=drive_file_id)
+
+            # Send audio as bytes
+            await update.message.reply_audio(
+                audio=audio_bytes,
+                caption=task.title,
+            )
+        except TaskDeliveryError as e:
+            logger.error(f"Failed to deliver audio task: {e}")
+            await update.message.reply_text(
+                f"Ошибка при загрузке аудиофайла: {str(e)}\n\nПожалуйста, попробуйте позже."
+            )
+            return
     else:
         await update.message.reply_text("Ошибка: отсутствует URL аудио контента.")
 
@@ -167,10 +263,23 @@ async def deliver_video_task(update: Update, task: Task, db) -> None:
 
     # Send video file
     if task.content_video_url:
-        await update.message.reply_video(
-            video=task.content_video_url,
-            caption=task.title,
-        )
+        try:
+            # Extract file ID for better caching
+            drive_file_id = _extract_google_drive_file_id(task.content_video_url)
+            # Download file content (with caching)
+            video_bytes = _download_file_content(task.content_video_url, file_id=drive_file_id)
+
+            # Send video as bytes
+            await update.message.reply_video(
+                video=video_bytes,
+                caption=task.title,
+            )
+        except TaskDeliveryError as e:
+            logger.error(f"Failed to deliver video task: {e}")
+            await update.message.reply_text(
+                f"Ошибка при загрузке видеофайла: {str(e)}\n\nПожалуйста, попробуйте позже."
+            )
+            return
     else:
         await update.message.reply_text("Ошибка: отсутствует URL видео контента.")
 

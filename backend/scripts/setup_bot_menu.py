@@ -23,9 +23,13 @@ logger = get_logger(__name__)
 
 # Bot commands definition
 BOT_COMMANDS = [
-    BotCommand("start", "Начать работу с ботом и пройти оценку уровня"),
-    BotCommand("assess", "Повторно пройти оценку уровня английского"),
-    BotCommand("task", "Получить новое задание для практики"),
+    BotCommand("start", "Начать работу с ботом"),
+    BotCommand("assess", "Определить мой уровень"),
+    BotCommand("task", "Выбрать задание"),
+    BotCommand("progress", "Мой прогресс"),
+    BotCommand("history", "История выполненных заданий"),
+    BotCommand("subscription", "Моя подписка"),
+    BotCommand("support", "Контакт поддержки"),
 ]
 
 
