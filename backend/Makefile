@@ -7,7 +7,7 @@ test:
 	uv run pytest
 
 lint:
-	uv run ruff check
+	uv run ruff check --fix
 
 typecheck:
 	uv run pyright
@@ -15,7 +15,7 @@ typecheck:
 format:
 	uv run ruff format .
 
-check: lint typecheck
+check: lint typecheck format
 
 run:
 	uv run python main.py
