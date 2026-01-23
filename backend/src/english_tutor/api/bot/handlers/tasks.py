@@ -4,8 +4,11 @@ Handles task requests, content delivery (text/audio/video), question delivery,
 answer collection, and feedback delivery.
 """
 
+import mimetypes
 import re
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import requests
@@ -30,6 +33,84 @@ task_completion_service = TaskCompletionService()
 media_cache_service = MediaCacheService()
 
 
+def _looks_like_html(content: bytes, content_type: str | None) -> bool:
+    """Best-effort detection of HTML error pages (common for Drive redirects/404 pages)."""
+    if content_type and "text/html" in content_type.lower():
+        return True
+    head = content.lstrip()[:64].lower()
+    return (
+        head.startswith(b"<!doctype html") or head.startswith(b"<html") or head.startswith(b"<head")
+    )
+
+
+def _filename_from_url(url: str) -> str:
+    path = urlparse(url).path
+    name = Path(path).name if path else ""
+    return name or "media"
+
+
+def _ensure_extension(filename: str, mime_type: str | None) -> str:
+    if "." in Path(filename).name:
+        return filename
+    if not mime_type:
+        return filename
+    ext = mimetypes.guess_extension(mime_type.split(";")[0].strip()) or ""
+    return f"{filename}{ext}"
+
+
+def _download_media(url: str, drive_file_id: str | None) -> tuple[bytes, str]:
+    """Download media bytes and return (bytes, filename).
+
+    - Uses persistent cache if possible.
+    - For Google Drive URLs, ONLY uses Drive API (no URL fallback), to avoid caching HTML pages.
+    - For non-Drive URLs, downloads via HTTP and rejects HTML responses.
+    """
+    cache_key = drive_file_id or url
+
+    cached = media_cache_service.get(cache_key)
+    if cached is not None:
+        # Filename must still be stable; best-effort from URL
+        return cached, _filename_from_url(url)
+
+    # Google Drive: do not fall back to URL download on API errors
+    if drive_file_id:
+        try:
+            drive_service = GoogleDriveService()
+            content, name, mime = drive_service.download_file(drive_file_id)
+            filename = _ensure_extension(name, mime)
+            # Cache only if looks valid (Drive API content shouldn't be HTML, but guard anyway)
+            if _looks_like_html(content, mime):
+                raise TaskDeliveryError("Downloaded content looks like an HTML page, not media.")
+            try:
+                media_cache_service.put(cache_key, content)
+            except ContentManagementError as cache_error:
+                logger.warning(f"Failed to cache file (continuing anyway): {cache_error}")
+            return content, filename
+        except ContentManagementError as e:
+            # Make the user-facing error explicit
+            raise TaskDeliveryError(
+                f"Файл не найден или недоступен в Google Drive (id={drive_file_id})."
+            ) from e
+
+    # Non-Drive URL fallback
+    try:
+        response = requests.get(url, timeout=30, allow_redirects=True)
+        response.raise_for_status()
+        content_type = response.headers.get("content-type")
+        content = response.content
+        if _looks_like_html(content, content_type):
+            raise TaskDeliveryError("Remote URL returned HTML instead of media.")
+        filename = _ensure_extension(_filename_from_url(url), content_type)
+        try:
+            media_cache_service.put(cache_key, content)
+        except ContentManagementError as cache_error:
+            logger.warning(f"Failed to cache file (continuing anyway): {cache_error}")
+        return content, filename
+    except requests.RequestException as e:
+        logger.error(f"Failed to download file from URL: {e}")
+        raise TaskDeliveryError(f"Failed to download file: {e}") from e
+
+
 def _extract_google_drive_file_id(url: str) -> str | None:
     """Extract Google Drive file ID from URL.
 
@@ -50,62 +131,6 @@ def _extract_google_drive_file_id(url: str) -> str | None:
         return match.group(1)
 
     return None
-
-
-def _download_file_content(url: str, file_id: Optional[str] = None) -> bytes:
-    """Download file content from URL with caching support.
-
-    Tries to use cache first, then downloads from Google Drive API if URL is a Google Drive URL,
-    otherwise uses requests to download directly. Caches the result for future use.
-
-    Args:
-        url: File URL
-        file_id: Optional file identifier for caching (if None, uses URL as identifier)
-
-    Returns:
-        File content as bytes
-
-    Raises:
-        TaskDeliveryError: If download fails
-    """
-    # Use URL as cache key if file_id not provided
-    cache_key = file_id or url
-
-    # Check cache first
-    cached_content = media_cache_service.get(cache_key)
-    if cached_content is not None:
-        logger.info(f"Using cached file for: {cache_key[:20]}...")
-        return cached_content
-
-    # Try to extract Google Drive file ID
-    drive_file_id = _extract_google_drive_file_id(url)
-    if drive_file_id:
-        try:
-            drive_service = GoogleDriveService()
-            content = drive_service.download_file_content(drive_file_id)
-            # Cache the downloaded content
-            try:
-                media_cache_service.put(cache_key, content)
-            except ContentManagementError as cache_error:
-                logger.warning(f"Failed to cache file (continuing anyway): {cache_error}")
-            return content
-        except ContentManagementError as e:
-            logger.warning(f"Failed to download from Google Drive API, trying direct download: {e}")
-
-    # Fallback to direct download
-    try:
-        response = requests.get(url, timeout=30, allow_redirects=True)
-        response.raise_for_status()
-        content = response.content
-        # Cache the downloaded content
-        try:
-            media_cache_service.put(cache_key, content)
-        except ContentManagementError as cache_error:
-            logger.warning(f"Failed to cache file (continuing anyway): {cache_error}")
-        return content
-    except requests.RequestException as e:
-        logger.error(f"Failed to download file from URL: {e}")
-        raise TaskDeliveryError(f"Failed to download file: {e}") from e
 
 
 def _get_user_data(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
@@ -228,18 +253,19 @@ async def deliver_audio_task(update: Update, task: Task, db) -> None:
         try:
             # Extract file ID for better caching
             drive_file_id = _extract_google_drive_file_id(task.content_audio_url)
-            # Download file content (with caching)
-            audio_bytes = _download_file_content(task.content_audio_url, file_id=drive_file_id)
+            audio_bytes, filename = _download_media(task.content_audio_url, drive_file_id)
 
             # Send audio as bytes
             await update.message.reply_audio(
                 audio=audio_bytes,
                 caption=task.title,
+                filename=filename,
             )
         except TaskDeliveryError as e:
             logger.error(f"Failed to deliver audio task: {e}")
             await update.message.reply_text(
-                f"Ошибка при загрузке аудиофайла: {str(e)}\n\nПожалуйста, попробуйте позже."
+                f"Ошибка при загрузке аудиофайла: {str(e)}\n\n"
+                "Пожалуйста, проверьте доступ к файлу в Google Drive и попробуйте позже."
             )
             return
     else:
@@ -266,18 +292,19 @@ async def deliver_video_task(update: Update, task: Task, db) -> None:
         try:
             # Extract file ID for better caching
             drive_file_id = _extract_google_drive_file_id(task.content_video_url)
-            # Download file content (with caching)
-            video_bytes = _download_file_content(task.content_video_url, file_id=drive_file_id)
+            video_bytes, filename = _download_media(task.content_video_url, drive_file_id)
 
             # Send video as bytes
             await update.message.reply_video(
                 video=video_bytes,
                 caption=task.title,
+                filename=filename,
             )
         except TaskDeliveryError as e:
             logger.error(f"Failed to deliver video task: {e}")
             await update.message.reply_text(
-                f"Ошибка при загрузке видеофайла: {str(e)}\n\nПожалуйста, попробуйте позже."
+                f"Ошибка при загрузке видеофайла: {str(e)}\n\n"
+                "Пожалуйста, проверьте доступ к файлу в Google Drive и попробуйте позже."
             )
             return
     else:
