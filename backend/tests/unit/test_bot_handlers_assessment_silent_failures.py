@@ -67,8 +67,9 @@ class TestAssessmentHandlerSilentFailures:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
-            questions=[str(question.id)],
+            sheets_row_id="assessment_1",
+            user_id=user.telegram_user_id,
+            questions=[question.sheets_row_id],
             answers={},
             score=0.0,
             status=AssessmentStatus.IN_PROGRESS,
@@ -76,8 +77,8 @@ class TestAssessmentHandlerSilentFailures:
         db_session.add(assessment)
         db_session.commit()
 
-        assessment_id = assessment.id
-        mock_context.user_data["current_assessment_id"] = str(assessment_id)
+        assessment_id = assessment.sheets_row_id
+        mock_context.user_data["current_assessment_id"] = assessment_id
         mock_update_callback_query.callback_query.data = "answer_0_1"
 
         # Mock db.commit() to raise an exception
@@ -188,8 +189,9 @@ class TestAssessmentHandlerSilentFailures:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
-            questions=[str(question1.id), str(question2.id)],
+            sheets_row_id="assessment_2",
+            user_id=user.telegram_user_id,
+            questions=[question1.sheets_row_id, question2.sheets_row_id],
             answers={},
             score=0.0,
             status=AssessmentStatus.IN_PROGRESS,
@@ -197,8 +199,8 @@ class TestAssessmentHandlerSilentFailures:
         db_session.add(assessment)
         db_session.commit()
 
-        assessment_id = assessment.id
-        mock_context.user_data["current_assessment_id"] = str(assessment_id)
+        assessment_id = assessment.sheets_row_id
+        mock_context.user_data["current_assessment_id"] = assessment_id
         mock_context.user_data["current_question_index"] = 0
         mock_update_callback_query.callback_query.data = "answer_0_1"
 

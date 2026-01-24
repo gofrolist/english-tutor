@@ -22,6 +22,7 @@ class TestTaskDeliveryFlow:
 
         # Step 2: Create a task with questions
         task = Task(
+            sheets_row_id="task_1",
             level="B1",
             type="text",
             title="Grammar: Past Simple",
@@ -33,47 +34,47 @@ class TestTaskDeliveryFlow:
         db_session.commit()
 
         question1 = Question(
-            task_id=task.id,
+            sheets_row_id="question_1",
+            task_id=task.sheets_row_id,
             question_text="What is the past tense of 'go'?",
             answer_options=["goed", "went", "gone", "going"],
             correct_answer=1,
-            order=1,
         )
         question2 = Question(
-            task_id=task.id,
+            sheets_row_id="question_2",
+            task_id=task.sheets_row_id,
             question_text="What is the past tense of 'eat'?",
             answer_options=["eated", "ate", "eaten", "eating"],
             correct_answer=1,
-            order=2,
         )
         db_session.add_all([question1, question2])
         db_session.commit()
 
         # Step 3: Request task
         delivery_service = TaskDeliveryService()
-        selected_task = delivery_service.select_task_for_user(user.id, db_session)
+        selected_task = delivery_service.select_task_for_user(user.telegram_user_id, db_session)
 
-        assert selected_task.id == task.id
+        assert selected_task.sheets_row_id == task.sheets_row_id
         assert selected_task.type == "text"
         assert selected_task.content_text is not None
 
         # Step 4: User answers questions
         answers = {
-            str(question1.id): 1,  # correct
-            str(question2.id): 0,  # incorrect
+            question1.sheets_row_id: 1,  # correct
+            question2.sheets_row_id: 0,  # incorrect
         }
 
         # Step 5: Complete task and get feedback
         completion_service = TaskCompletionService()
         progress = completion_service.complete_task(
-            user.id,
-            task.id,
+            user.telegram_user_id,
+            task.sheets_row_id,
             answers,
             db_session,
         )
 
-        assert progress.user_id == user.id
-        assert progress.task_id == task.id
+        assert progress.user_id == user.telegram_user_id
+        assert progress.task_id == task.sheets_row_id
         assert progress.answers == answers
         assert progress.score >= 0
         assert 0 <= progress.percentage_correct <= 100
@@ -86,20 +87,21 @@ class TestTaskDeliveryFlow:
         db_session.commit()
 
         task = Task(
+            sheets_row_id="audio_task_1",
             level="A2",
             type="audio",
             title="Listening: Daily Routine",
-            content_audio_url="https://example.com/audio.mp3",
+            content_url="https://example.com/audio.mp3",
             status="published",
         )
         db_session.add(task)
         db_session.commit()
 
         delivery_service = TaskDeliveryService()
-        selected_task = delivery_service.select_task_for_user(user.id, db_session)
+        selected_task = delivery_service.select_task_for_user(user.telegram_user_id, db_session)
 
         assert selected_task.type == "audio"
-        assert selected_task.content_audio_url is not None
+        assert selected_task.content_url is not None
 
     def test_task_delivery_video_task(self, db_session):
         """Test delivering a video task."""
@@ -108,17 +110,18 @@ class TestTaskDeliveryFlow:
         db_session.commit()
 
         task = Task(
+            sheets_row_id="video_task_1",
             level="C1",
             type="video",
             title="Video: Academic Presentation",
-            content_video_url="https://example.com/video.mp4",
+            content_url="https://example.com/video.mp4",
             status="published",
         )
         db_session.add(task)
         db_session.commit()
 
         delivery_service = TaskDeliveryService()
-        selected_task = delivery_service.select_task_for_user(user.id, db_session)
+        selected_task = delivery_service.select_task_for_user(user.telegram_user_id, db_session)
 
         assert selected_task.type == "video"
-        assert selected_task.content_video_url is not None
+        assert selected_task.content_url is not None

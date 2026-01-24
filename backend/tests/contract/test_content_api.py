@@ -40,6 +40,7 @@ def client(db_session):
 def existing_task_id(db_session) -> str:
     """Create a real task so by-id endpoints don't 404."""
     task = Task(
+        sheets_row_id="contract_test_task",
         level="B1",
         type="text",
         title="Contract Test Task",
@@ -49,7 +50,7 @@ def existing_task_id(db_session) -> str:
     db_session.add(task)
     db_session.commit()
     db_session.refresh(task)
-    return str(task.id)
+    return str(task.sheets_row_id)
 
 
 class TestContentAPI:

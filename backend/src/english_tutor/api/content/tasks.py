@@ -5,7 +5,6 @@ REST API endpoints for managing learning tasks (CRUD operations).
 
 from datetime import datetime
 from typing import Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,8 +27,7 @@ class TaskCreate(BaseModel):
     type: str = Field(..., description="Content type (text, audio, video)")
     title: str = Field(..., description="Task title")
     content_text: Optional[str] = Field(None, description="Text content for text-type tasks")
-    content_audio_url: Optional[str] = Field(None, description="URL for audio content")
-    content_video_url: Optional[str] = Field(None, description="URL for video content")
+    content_url: Optional[str] = Field(None, description="URL for audio/video content")
     explanation: Optional[str] = Field(None, description="Educational explanation/rules")
     status: str = Field(default="draft", description="Task status (draft, published)")
 
@@ -41,8 +39,7 @@ class TaskUpdate(BaseModel):
     type: Optional[str] = Field(None, description="Content type (text, audio, video)")
     title: Optional[str] = Field(None, description="Task title")
     content_text: Optional[str] = Field(None, description="Text content for text-type tasks")
-    content_audio_url: Optional[str] = Field(None, description="URL for audio content")
-    content_video_url: Optional[str] = Field(None, description="URL for video content")
+    content_url: Optional[str] = Field(None, description="URL for audio/video content")
     explanation: Optional[str] = Field(None, description="Educational explanation/rules")
     status: Optional[str] = Field(None, description="Task status (draft, published)")
 
@@ -52,13 +49,12 @@ class TaskResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID
+    sheets_row_id: str
     level: str
     type: str
     title: str
     content_text: Optional[str]
-    content_audio_url: Optional[str]
-    content_video_url: Optional[str]
+    content_url: Optional[str]
     explanation: Optional[str]
     status: str
     created_at: datetime
@@ -144,15 +140,10 @@ def create_task(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="content_text is required for text-type tasks",
         )
-    if task_data.type == "audio" and not task_data.content_audio_url:
+    if task_data.type in ("audio", "video") and not task_data.content_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="content_audio_url is required for audio-type tasks",
-        )
-    if task_data.type == "video" and not task_data.content_video_url:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="content_video_url is required for video-type tasks",
+            detail="content_url is required for audio/video-type tasks",
         )
 
     # Validate status
@@ -169,10 +160,10 @@ def create_task(
             type=task_data.type,
             title=task_data.title,
             content_text=task_data.content_text,
-            content_audio_url=task_data.content_audio_url,
-            content_video_url=task_data.content_video_url,
+            content_url=task_data.content_url,
             explanation=task_data.explanation,
             status=task_data.status,  # Status is already a string, model expects string
+            sheets_row_id=f"task_{datetime.now().timestamp()}",  # Generate temporary ID
         )
 
         db.add(task)
@@ -180,7 +171,8 @@ def create_task(
         db.refresh(task)
 
         logger.info(
-            "Task created", extra={"task_id": str(task.id), "level": task.level, "type": task.type}
+            "Task created",
+            extra={"task_id": task.sheets_row_id, "level": task.level, "type": task.type},
         )
 
         return TaskResponse.model_validate(task)
@@ -195,13 +187,13 @@ def create_task(
 
 @router.get("/{task_id}", response_model=TaskResponse)
 def get_task(
-    task_id: UUID,
+    task_id: str,
     db: Session = Depends(get_db),
 ) -> TaskResponse:
     """Get a task by ID.
 
     Args:
-        task_id: Task UUID
+        task_id: Task sheets_row_id
         db: Database session
 
     Returns:
@@ -210,7 +202,7 @@ def get_task(
     Raises:
         HTTPException: If task not found
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
 
     if not task:
         raise HTTPException(
@@ -223,14 +215,14 @@ def get_task(
 
 @router.put("/{task_id}", response_model=TaskResponse)
 def update_task(
-    task_id: UUID,
+    task_id: str,
     task_data: TaskUpdate,
     db: Session = Depends(get_db),
 ) -> TaskResponse:
     """Update a task.
 
     Args:
-        task_id: Task UUID
+        task_id: Task sheets_row_id
         task_data: Task update data
         db: Database session
 
@@ -240,7 +232,7 @@ def update_task(
     Raises:
         HTTPException: If task not found or validation fails
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
 
     if not task:
         raise HTTPException(
@@ -274,11 +266,8 @@ def update_task(
         if task_data.content_text is not None:
             task.content_text = task_data.content_text
 
-        if task_data.content_audio_url is not None:
-            task.content_audio_url = task_data.content_audio_url
-
-        if task_data.content_video_url is not None:
-            task.content_video_url = task_data.content_video_url
+        if task_data.content_url is not None:
+            task.content_url = task_data.content_url
 
         if task_data.explanation is not None:
             task.explanation = task_data.explanation
@@ -295,7 +284,7 @@ def update_task(
         db.commit()
         db.refresh(task)
 
-        logger.info("Task updated", extra={"task_id": str(task.id)})
+        logger.info("Task updated", extra={"task_id": task.sheets_row_id})
 
         return TaskResponse.model_validate(task)
     except HTTPException:
@@ -311,19 +300,19 @@ def update_task(
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(
-    task_id: UUID,
+    task_id: str,
     db: Session = Depends(get_db),
 ) -> None:
     """Delete a task.
 
     Args:
-        task_id: Task UUID
+        task_id: Task sheets_row_id
         db: Database session
 
     Raises:
         HTTPException: If task not found
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
 
     if not task:
         raise HTTPException(
@@ -347,13 +336,13 @@ def delete_task(
 
 @router.post("/{task_id}/publish", response_model=TaskResponse)
 def publish_task(
-    task_id: UUID,
+    task_id: str,
     db: Session = Depends(get_db),
 ) -> TaskResponse:
     """Publish a task (change status from draft to published).
 
     Args:
-        task_id: Task UUID
+        task_id: Task sheets_row_id
         db: Database session
 
     Returns:
@@ -362,7 +351,7 @@ def publish_task(
     Raises:
         HTTPException: If task not found or already published
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
 
     if not task:
         raise HTTPException(
@@ -381,7 +370,7 @@ def publish_task(
         db.commit()
         db.refresh(task)
 
-        logger.info("Task published", extra={"task_id": str(task.id)})
+        logger.info("Task published", extra={"task_id": task.sheets_row_id})
 
         return TaskResponse.model_validate(task)
     except Exception as e:

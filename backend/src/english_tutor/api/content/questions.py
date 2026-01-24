@@ -5,7 +5,6 @@ REST API endpoints for managing questions within tasks.
 
 from datetime import datetime
 from typing import Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,7 +28,6 @@ class QuestionCreate(BaseModel):
     answer_options: list[str] = Field(..., description="List of answer options")
     correct_answer: int = Field(..., description="Index of correct answer")
     weight: float = Field(default=1.0, description="Weight for scoring")
-    order: int = Field(..., description="Display order within task")
 
 
 class QuestionUpdate(BaseModel):
@@ -39,7 +37,6 @@ class QuestionUpdate(BaseModel):
     answer_options: Optional[list[str]] = Field(None, description="List of answer options")
     correct_answer: Optional[int] = Field(None, description="Index of correct answer")
     weight: Optional[float] = Field(None, description="Weight for scoring")
-    order: Optional[int] = Field(None, description="Display order within task")
 
 
 class QuestionResponse(BaseModel):
@@ -47,26 +44,25 @@ class QuestionResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID
-    task_id: UUID
+    sheets_row_id: str
+    task_id: str
     question_text: str
     answer_options: list[str]
     correct_answer: int
     weight: float
-    order: int
     created_at: datetime
     updated_at: datetime
 
 
 @router.get("", response_model=list[QuestionResponse])
 def get_questions(
-    task_id: UUID,
+    task_id: str,
     db: Session = Depends(get_db),
 ) -> list[QuestionResponse]:
     """Get all questions for a task.
 
     Args:
-        task_id: Task UUID
+        task_id: Task sheets_row_id
         db: Database session
 
     Returns:
@@ -75,7 +71,7 @@ def get_questions(
     Raises:
         HTTPException: If task not found
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
 
     if not task:
         raise HTTPException(
@@ -84,7 +80,10 @@ def get_questions(
         )
 
     questions = (
-        db.query(Question).filter(Question.task_id == task_id).order_by(Question.order).all()
+        db.query(Question)
+        .filter(Question.task_id == task_id)
+        .order_by(Question.sheets_row_id)
+        .all()
     )
 
     logger.info("Questions retrieved", extra={"task_id": str(task_id), "count": len(questions)})
@@ -94,14 +93,14 @@ def get_questions(
 
 @router.post("", response_model=QuestionResponse, status_code=status.HTTP_201_CREATED)
 def create_question(
-    task_id: UUID,
+    task_id: str,
     question_data: QuestionCreate,
     db: Session = Depends(get_db),
 ) -> QuestionResponse:
     """Create a new question for a task.
 
     Args:
-        task_id: Task UUID
+        task_id: Task sheets_row_id
         question_data: Question creation data
         db: Database session
 
@@ -111,7 +110,7 @@ def create_question(
     Raises:
         HTTPException: If task not found or validation fails
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
 
     if not task:
         raise HTTPException(
@@ -142,13 +141,6 @@ def create_question(
             detail="weight must be positive",
         )
 
-    # Validate order
-    if question_data.order <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="order must be positive",
-        )
-
     try:
         question = Question(
             task_id=task_id,
@@ -156,7 +148,7 @@ def create_question(
             answer_options=question_data.answer_options,
             correct_answer=question_data.correct_answer,
             weight=question_data.weight,
-            order=question_data.order,
+            sheets_row_id=f"question_{datetime.now().timestamp()}",  # Generate temporary ID
         )
 
         db.add(question)
@@ -164,7 +156,7 @@ def create_question(
         db.refresh(question)
 
         logger.info(
-            "Question created", extra={"question_id": str(question.id), "task_id": str(task_id)}
+            "Question created", extra={"question_id": question.sheets_row_id, "task_id": task_id}
         )
 
         return QuestionResponse.model_validate(question)
@@ -183,15 +175,15 @@ def create_question(
 
 @router.get("/{question_id}", response_model=QuestionResponse)
 def get_question(
-    task_id: UUID,
-    question_id: UUID,
+    task_id: str,
+    question_id: str,
     db: Session = Depends(get_db),
 ) -> QuestionResponse:
     """Get a question by ID.
 
     Args:
-        task_id: Task UUID
-        question_id: Question UUID
+        task_id: Task sheets_row_id
+        question_id: Question sheets_row_id
         db: Database session
 
     Returns:
@@ -200,7 +192,7 @@ def get_question(
     Raises:
         HTTPException: If task or question not found
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
 
     if not task:
         raise HTTPException(
@@ -209,7 +201,9 @@ def get_question(
         )
 
     question = (
-        db.query(Question).filter(Question.id == question_id, Question.task_id == task_id).first()
+        db.query(Question)
+        .filter(Question.sheets_row_id == question_id, Question.task_id == task_id)
+        .first()
     )
 
     if not question:
@@ -223,16 +217,16 @@ def get_question(
 
 @router.put("/{question_id}", response_model=QuestionResponse)
 def update_question(
-    task_id: UUID,
-    question_id: UUID,
+    task_id: str,
+    question_id: str,
     question_data: QuestionUpdate,
     db: Session = Depends(get_db),
 ) -> QuestionResponse:
     """Update a question.
 
     Args:
-        task_id: Task UUID
-        question_id: Question UUID
+        task_id: Task sheets_row_id
+        question_id: Question sheets_row_id
         question_data: Question update data
         db: Database session
 
@@ -242,7 +236,7 @@ def update_question(
     Raises:
         HTTPException: If task or question not found or validation fails
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
 
     if not task:
         raise HTTPException(
@@ -251,7 +245,9 @@ def update_question(
         )
 
     question = (
-        db.query(Question).filter(Question.id == question_id, Question.task_id == task_id).first()
+        db.query(Question)
+        .filter(Question.sheets_row_id == question_id, Question.task_id == task_id)
+        .first()
     )
 
     if not question:
@@ -296,19 +292,11 @@ def update_question(
                 )
             question.weight = question_data.weight
 
-        if question_data.order is not None:
-            if question_data.order <= 0:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="order must be positive",
-                )
-            question.order = question_data.order
-
         db.commit()
         db.refresh(question)
 
         logger.info(
-            "Question updated", extra={"question_id": str(question.id), "task_id": str(task_id)}
+            "Question updated", extra={"question_id": question.sheets_row_id, "task_id": task_id}
         )
 
         return QuestionResponse.model_validate(question)
@@ -329,21 +317,21 @@ def update_question(
 
 @router.delete("/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_question(
-    task_id: UUID,
-    question_id: UUID,
+    task_id: str,
+    question_id: str,
     db: Session = Depends(get_db),
 ) -> None:
     """Delete a question.
 
     Args:
-        task_id: Task UUID
-        question_id: Question UUID
+        task_id: Task sheets_row_id
+        question_id: Question sheets_row_id
         db: Database session
 
     Raises:
         HTTPException: If task or question not found
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
 
     if not task:
         raise HTTPException(
@@ -352,7 +340,9 @@ def delete_question(
         )
 
     question = (
-        db.query(Question).filter(Question.id == question_id, Question.task_id == task_id).first()
+        db.query(Question)
+        .filter(Question.sheets_row_id == question_id, Question.task_id == task_id)
+        .first()
     )
 
     if not question:

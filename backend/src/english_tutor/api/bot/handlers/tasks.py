@@ -9,7 +9,6 @@ import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
-from uuid import UUID
 
 import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -174,7 +173,7 @@ async def task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
 
         # Select task for user
-        task = task_delivery_service.select_task_for_user(user.id, db)
+        task = task_delivery_service.select_task_for_user(user.telegram_user_id, db)
 
         if not task:
             await update.message.reply_text(
@@ -185,7 +184,7 @@ async def task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # Store task ID in context for answer collection
         user_data = _get_user_data(context)
-        user_data["current_task_id"] = str(task.id)
+        user_data["current_task_id"] = task.sheets_row_id
         user_data["task_answers"] = {}
 
         # Deliver task content based on type
@@ -198,7 +197,10 @@ async def task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # Send questions if task has questions
         questions = (
-            db.query(Question).filter(Question.task_id == task.id).order_by(Question.order).all()
+            db.query(Question)
+            .filter(Question.task_id == task.sheets_row_id)
+            .order_by(Question.sheets_row_id)
+            .all()
         )
         if questions:
             await send_first_question(update, context, questions[0], db)
@@ -232,7 +234,7 @@ async def deliver_text_task(update: Update, task: Task, db) -> None:
 
     logger.info(
         "Text task delivered",
-        extra={"task_id": str(task.id), "task_type": task.type},
+        extra={"task_id": task.sheets_row_id, "task_type": task.type},
     )
 
 
@@ -249,11 +251,11 @@ async def deliver_audio_task(update: Update, task: Task, db) -> None:
     )
 
     # Send audio file
-    if task.content_audio_url:
+    if task.content_url:
         try:
             # Extract file ID for better caching
-            drive_file_id = _extract_google_drive_file_id(task.content_audio_url)
-            audio_bytes, filename = _download_media(task.content_audio_url, drive_file_id)
+            drive_file_id = _extract_google_drive_file_id(task.content_url)
+            audio_bytes, filename = _download_media(task.content_url, drive_file_id)
 
             # Send audio as bytes
             await update.message.reply_audio(
@@ -273,7 +275,7 @@ async def deliver_audio_task(update: Update, task: Task, db) -> None:
 
     logger.info(
         "Audio task delivered",
-        extra={"task_id": str(task.id), "task_type": task.type},
+        extra={"task_id": task.sheets_row_id, "task_type": task.type},
     )
 
 
@@ -288,11 +290,11 @@ async def deliver_video_task(update: Update, task: Task, db) -> None:
     await update.message.reply_text(f"🎥 **{task.title}**\n\nПожалуйста, посмотрите видео ниже.")
 
     # Send video file
-    if task.content_video_url:
+    if task.content_url:
         try:
             # Extract file ID for better caching
-            drive_file_id = _extract_google_drive_file_id(task.content_video_url)
-            video_bytes, filename = _download_media(task.content_video_url, drive_file_id)
+            drive_file_id = _extract_google_drive_file_id(task.content_url)
+            video_bytes, filename = _download_media(task.content_url, drive_file_id)
 
             # Send video as bytes
             await update.message.reply_video(
@@ -312,7 +314,7 @@ async def deliver_video_task(update: Update, task: Task, db) -> None:
 
     logger.info(
         "Video task delivered",
-        extra={"task_id": str(task.id), "task_type": task.type},
+        extra={"task_id": task.sheets_row_id, "task_type": task.type},
     )
 
 
@@ -348,7 +350,7 @@ async def send_question(
         db: Database session.
     """
     keyboard = [
-        [InlineKeyboardButton(option, callback_data=f"task_answer_{question.id}_{i}")]
+        [InlineKeyboardButton(option, callback_data=f"task_answer_{question.sheets_row_id}_{i}")]
         for i, option in enumerate(question.answer_options)
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -361,8 +363,8 @@ async def send_question(
     logger.info(
         "Question delivered",
         extra={
-            "question_id": str(question.id),
-            "task_id": str(context.user_data.get("current_task_id")),
+            "question_id": question.sheets_row_id,
+            "task_id": context.user_data.get("current_task_id"),
         },
     )
 
@@ -412,8 +414,7 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             return
 
-        task_id = UUID(task_id_str)
-        task = db.query(Task).filter(Task.id == task_id).first()
+        task = db.query(Task).filter(Task.sheets_row_id == task_id_str).first()
 
         if not task:
             await safe_edit_message_text(query, "Задание не найдено.")
@@ -427,13 +428,16 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         # Get all questions for this task
         questions = (
-            db.query(Question).filter(Question.task_id == task_id).order_by(Question.order).all()
+            db.query(Question)
+            .filter(Question.task_id == task_id_str)
+            .order_by(Question.sheets_row_id)
+            .all()
         )
 
         # Find current question index
         current_question_idx = None
         for idx, q in enumerate(questions):
-            if str(q.id) == question_id_str:
+            if q.sheets_row_id == question_id_str:
                 current_question_idx = idx
                 break
 
@@ -452,7 +456,8 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     [
                         [
                             InlineKeyboardButton(
-                                option, callback_data=f"task_answer_{next_question.id}_{i}"
+                                option,
+                                callback_data=f"task_answer_{next_question.sheets_row_id}_{i}",
                             )
                         ]
                         for i, option in enumerate(next_question.answer_options)
@@ -461,7 +466,9 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
         else:
             # All questions answered, complete task
-            await complete_task_and_send_feedback(update, context, user.id, task_id, db)
+            await complete_task_and_send_feedback(
+                update, context, user.telegram_user_id, task_id_str, db
+            )
 
     except (TaskDeliveryError, ValueError, Exception) as e:
         logger.error("Task answer handling error", extra={"error": str(e)})
@@ -475,8 +482,8 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def complete_task_and_send_feedback(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    user_id: UUID,
-    task_id: UUID,
+    user_id: str,
+    task_id: str,
     db,
 ) -> None:
     """Complete task and send feedback to user.
@@ -484,8 +491,8 @@ async def complete_task_and_send_feedback(
     Args:
         update: Telegram update object.
         context: Bot context.
-        user_id: User UUID.
-        task_id: Task UUID.
+        user_id: User telegram_user_id.
+        task_id: Task sheets_row_id.
         db: Database session.
     """
     try:
@@ -517,7 +524,7 @@ async def complete_task_and_send_feedback(
             feedback_message += "Продолжайте практиковаться! Вы учитесь. 📖"
 
         # Get task for explanation
-        task = db.query(Task).filter(Task.id == task_id).first()
+        task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
         if task and task.explanation:
             feedback_message += f"\n\n💡 **Объяснение:**\n{task.explanation}"
 
@@ -534,8 +541,8 @@ async def complete_task_and_send_feedback(
         logger.info(
             "Task completed and feedback sent",
             extra={
-                "user_id": str(user_id),
-                "task_id": str(task_id),
+                "user_id": user_id,
+                "task_id": task_id,
                 "score": progress.score,
                 "percentage": percentage,
             },

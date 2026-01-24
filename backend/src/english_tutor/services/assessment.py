@@ -5,7 +5,6 @@ Business logic for assessment quiz, scoring, and level determination.
 
 from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -90,16 +89,18 @@ class AssessmentService:
 
     async def start_assessment(
         self,
-        user_id: UUID,
+        user_id: str,
         db: Session,
         question_ids: list[str] | None = None,
+        sheets_row_id: str | None = None,
     ) -> Assessment:
         """Start a new assessment for a user.
 
         Args:
-            user_id: User UUID.
+            user_id: User telegram_user_id.
             db: Database session.
-            question_ids: Optional list of question IDs to use. If None, will be selected.
+            question_ids: Optional list of question sheets_row_ids to use. If None, will be selected.
+            sheets_row_id: Optional sheets_row_id for the assessment. If None, will be generated.
 
         Returns:
             Created Assessment instance.
@@ -108,7 +109,14 @@ class AssessmentService:
         if question_ids is None:
             question_ids = self._select_assessment_questions(db)
 
+        # Generate sheets_row_id if not provided (use a timestamp-based ID)
+        if sheets_row_id is None:
+            import time
+
+            sheets_row_id = f"assessment_{int(time.time() * 1000)}"
+
         assessment = Assessment(
+            sheets_row_id=sheets_row_id,
             user_id=user_id,
             questions=question_ids,
             answers={},
@@ -123,17 +131,17 @@ class AssessmentService:
         logger.info(
             "Assessment started",
             extra={
-                "assessment_id": str(assessment.id),
-                "user_id": str(user_id),
+                "assessment_id": assessment.sheets_row_id,
+                "user_id": user_id,
                 "question_count": len(question_ids),
             },
         )
 
         log_user_interaction(
             logger,
-            str(user_id),
+            user_id,
             "assessment_started",
-            assessment_id=str(assessment.id),
+            assessment_id=assessment.sheets_row_id,
         )
 
         return assessment
@@ -143,13 +151,13 @@ class AssessmentService:
 
         Strategy:
         - Select all questions from all levels (A1-C2)
-        - Return question IDs as strings for JSON storage, ordered sequentially by sheets_row_id
+        - Return question sheets_row_ids as strings for JSON storage, ordered sequentially by sheets_row_id
 
         Args:
             db: Database session
 
         Returns:
-            List of question IDs as strings, ordered sequentially by sheets_row_id
+            List of question sheets_row_ids as strings, ordered sequentially by sheets_row_id
         """
         # Get all questions ordered by sheets_row_id
         selected_questions = (
@@ -161,8 +169,8 @@ class AssessmentService:
             .all()
         )
 
-        # Extract question IDs
-        selected_question_ids = [str(q.id) for q in selected_questions]
+        # Extract question sheets_row_ids
+        selected_question_ids: list[str] = [str(q.sheets_row_id) for q in selected_questions]
 
         logger.info(f"Selected {len(selected_question_ids)} assessment questions (all available)")
 
@@ -171,24 +179,24 @@ class AssessmentService:
     def get_assessment_questions(
         self, db: Session, question_ids: list[str]
     ) -> list[dict[str, Any]]:
-        """Get assessment question data by IDs.
+        """Get assessment question data by sheets_row_ids.
 
         Args:
             db: Database session
-            question_ids: List of question ID strings
+            question_ids: List of question sheets_row_id strings
 
         Returns:
-            List of question dictionaries with id, weight, correct_answer
+            List of question dictionaries with id (sheets_row_id), weight, correct_answer
         """
         questions = (
             db.query(AssessmentQuestion)
-            .filter(AssessmentQuestion.id.in_([UUID(qid) for qid in question_ids]))
+            .filter(AssessmentQuestion.sheets_row_id.in_(question_ids))
             .all()
         )
 
         return [
             {
-                "id": str(q.id),
+                "id": q.sheets_row_id,
                 "question_text": q.question_text,
                 "answer_options": q.answer_options,
                 "correct_answer": q.correct_answer,
@@ -199,7 +207,7 @@ class AssessmentService:
 
     async def complete_assessment(
         self,
-        assessment_id: UUID,
+        assessment_id: str,
         answers: dict[str, Any],
         score: float,
         level: str,
@@ -208,8 +216,8 @@ class AssessmentService:
         """Complete an assessment with answers and determine level.
 
         Args:
-            assessment_id: Assessment UUID.
-            answers: Dictionary mapping question IDs to user answers.
+            assessment_id: Assessment sheets_row_id.
+            answers: Dictionary mapping question sheets_row_ids to user answers.
             score: Calculated score.
             level: Determined English level.
             db: Database session.
@@ -217,7 +225,7 @@ class AssessmentService:
         Returns:
             Updated Assessment instance.
         """
-        assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
+        assessment = db.query(Assessment).filter(Assessment.sheets_row_id == assessment_id).first()
         if not assessment:
             raise AssessmentError(f"Assessment not found: {assessment_id}")
 
@@ -232,8 +240,8 @@ class AssessmentService:
 
         log_quiz_submission(
             logger,
-            str(assessment.user_id),
-            str(assessment_id),
+            assessment.user_id,
+            assessment_id,
             score,
             level=level,
         )
@@ -241,8 +249,8 @@ class AssessmentService:
         logger.info(
             "Assessment completed",
             extra={
-                "assessment_id": str(assessment_id),
-                "user_id": str(assessment.user_id),
+                "assessment_id": assessment_id,
+                "user_id": assessment.user_id,
                 "score": score,
                 "level": level,
             },
@@ -252,19 +260,19 @@ class AssessmentService:
 
     async def abandon_assessment(
         self,
-        assessment_id: UUID,
+        assessment_id: str,
         db: Session,
     ) -> Assessment:
         """Abandon an in-progress assessment.
 
         Args:
-            assessment_id: Assessment UUID.
+            assessment_id: Assessment sheets_row_id.
             db: Database session.
 
         Returns:
             Updated Assessment instance.
         """
-        assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
+        assessment = db.query(Assessment).filter(Assessment.sheets_row_id == assessment_id).first()
         if not assessment:
             raise AssessmentError(f"Assessment not found: {assessment_id}")
 
@@ -276,8 +284,8 @@ class AssessmentService:
         logger.info(
             "Assessment abandoned",
             extra={
-                "assessment_id": str(assessment_id),
-                "user_id": str(assessment.user_id),
+                "assessment_id": assessment_id,
+                "user_id": assessment.user_id,
             },
         )
 

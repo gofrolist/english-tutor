@@ -90,8 +90,9 @@ class TestAssessmentHandlers:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
-            questions=[str(question.id)],
+            sheets_row_id="assessment_1",
+            user_id=user.telegram_user_id,
+            questions=[question.sheets_row_id],
             answers={},
             score=0.0,
             status=AssessmentStatus.IN_PROGRESS,
@@ -103,7 +104,9 @@ class TestAssessmentHandlers:
         mock_context.user_data["current_question_index"] = 0
 
         # Call function
-        await send_assessment_question(mock_update_message, mock_context, assessment.id, db_session)
+        await send_assessment_question(
+            mock_update_message, mock_context, assessment.sheets_row_id, db_session
+        )
 
         # Verify message was sent
         mock_update_message.message.reply_text.assert_called_once()
@@ -134,8 +137,9 @@ class TestAssessmentHandlers:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
-            questions=[str(question.id)],
+            sheets_row_id="assessment_2",
+            user_id=user.telegram_user_id,
+            questions=[question.sheets_row_id],
             answers={},
             score=0.0,
             status=AssessmentStatus.IN_PROGRESS,
@@ -148,7 +152,7 @@ class TestAssessmentHandlers:
 
         # Call function - this should NOT raise AttributeError
         await send_assessment_question(
-            mock_update_callback_query, mock_context, assessment.id, db_session
+            mock_update_callback_query, mock_context, assessment.sheets_row_id, db_session
         )
 
         # Verify message was sent via callback_query.message
@@ -187,8 +191,9 @@ class TestAssessmentHandlers:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
-            questions=[str(question1.id), str(question2.id)],
+            sheets_row_id="assessment_3",
+            user_id=user.telegram_user_id,
+            questions=[question1.sheets_row_id, question2.sheets_row_id],
             answers={},
             score=0.0,
             status=AssessmentStatus.IN_PROGRESS,
@@ -197,11 +202,11 @@ class TestAssessmentHandlers:
         db_session.commit()
 
         # Store IDs before handler closes session
-        assessment_id = assessment.id
-        question1_id = question1.id
+        assessment_id = assessment.sheets_row_id
+        question1_id = question1.sheets_row_id
 
         # Set context
-        mock_context.user_data["current_assessment_id"] = str(assessment_id)
+        mock_context.user_data["current_assessment_id"] = assessment_id
         mock_context.user_data["current_question_index"] = 0
 
         # Mock the callback query data
@@ -227,10 +232,10 @@ class TestAssessmentHandlers:
 
         # Verify answer was stored (query fresh from DB since handler closed its session)
         updated_assessment = (
-            db_session.query(Assessment).filter(Assessment.id == assessment_id).first()
+            db_session.query(Assessment).filter(Assessment.sheets_row_id == assessment_id).first()
         )
-        assert str(question1_id) in updated_assessment.answers
-        assert updated_assessment.answers[str(question1_id)] == 1
+        assert question1_id in updated_assessment.answers
+        assert updated_assessment.answers[question1_id] == 1
 
     @pytest.mark.asyncio
     async def test_handle_assessment_answer_completes_assessment_on_last_question(
@@ -254,8 +259,9 @@ class TestAssessmentHandlers:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
-            questions=[str(question.id)],
+            sheets_row_id="assessment_4",
+            user_id=user.telegram_user_id,
+            questions=[question.sheets_row_id],
             answers={},
             score=0.0,
             status=AssessmentStatus.IN_PROGRESS,
@@ -264,7 +270,7 @@ class TestAssessmentHandlers:
         db_session.commit()
 
         # Set context
-        mock_context.user_data["current_assessment_id"] = str(assessment.id)
+        mock_context.user_data["current_assessment_id"] = assessment.sheets_row_id
         mock_context.user_data["current_question_index"] = 0
 
         # Mock the callback query data
@@ -365,7 +371,8 @@ class TestAssessmentHandlers:
         db_session.commit()
 
         old_assessment = Assessment(
-            user_id=user.id,
+            sheets_row_id="old_assessment_1",
+            user_id=user.telegram_user_id,
             questions=["q1"],
             answers={},
             score=0.0,
@@ -387,8 +394,8 @@ class TestAssessmentHandlers:
         db_session.commit()
 
         # Store IDs before handler closes session
-        old_assessment_id = old_assessment.id
-        user_id = user.id
+        old_assessment_id = old_assessment.sheets_row_id
+        user_id = user.telegram_user_id
 
         # Mock get_session_local to return our test session
         with patch(
@@ -400,7 +407,9 @@ class TestAssessmentHandlers:
 
         # Verify old assessment was abandoned (query fresh from DB since handler closed its session)
         abandoned_assessment = (
-            db_session.query(Assessment).filter(Assessment.id == old_assessment_id).first()
+            db_session.query(Assessment)
+            .filter(Assessment.sheets_row_id == old_assessment_id)
+            .first()
         )
         assert abandoned_assessment is not None
         assert abandoned_assessment.status == AssessmentStatus.ABANDONED
@@ -414,7 +423,7 @@ class TestAssessmentHandlers:
             .all()
         )
         assert len(new_assessments) == 1
-        assert new_assessments[0].id != old_assessment_id
+        assert new_assessments[0].sheets_row_id != old_assessment_id
 
     @pytest.mark.asyncio
     async def test_assess_command_with_existing_user(
@@ -460,7 +469,8 @@ class TestAssessmentHandlers:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
+            sheets_row_id="assessment_5",
+            user_id=user.telegram_user_id,
             questions=[],  # No questions
             answers={},
             score=0.0,
@@ -478,7 +488,7 @@ class TestAssessmentHandlers:
         ) as mock_complete:
             mock_complete.return_value = AsyncMock()
             await send_assessment_question(
-                mock_update_message, mock_context, assessment.id, db_session
+                mock_update_message, mock_context, assessment.sheets_row_id, db_session
             )
 
         # Verify completion was triggered

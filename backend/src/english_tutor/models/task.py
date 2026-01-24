@@ -5,9 +5,8 @@ Represents a learning activity delivered to users.
 
 import enum
 from datetime import datetime, timezone
-from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Index, String, Uuid
+from sqlalchemy import CheckConstraint, Column, DateTime, Index, String
 from sqlalchemy.orm import relationship
 
 from src.english_tutor.models.base import Base
@@ -38,7 +37,13 @@ class Task(Base):
 
     __tablename__ = "tasks"
 
-    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    sheets_row_id = Column(
+        String,
+        primary_key=True,
+        nullable=False,
+        index=True,
+        comment="Google Sheets row ID for tracking sync",
+    )
     level = Column(
         String,
         nullable=False,
@@ -53,8 +58,7 @@ class Task(Base):
     )
     title = Column(String, nullable=False)
     content_text = Column(String, nullable=True, comment="Text content for text-type tasks")
-    content_audio_url = Column(String, nullable=True, comment="URL for audio content")
-    content_video_url = Column(String, nullable=True, comment="URL for video content")
+    content_url = Column(String, nullable=True, comment="URL for audio/video content")
     explanation = Column(String, nullable=True, comment="Educational explanation/rules")
     created_at = Column(DateTime, default=_utcnow_naive, nullable=False)
     updated_at = Column(DateTime, default=_utcnow_naive, onupdate=_utcnow_naive, nullable=False)
@@ -64,12 +68,6 @@ class Task(Base):
         default=TaskStatus.DRAFT.value,
         index=True,
         comment="Task status: draft, published",
-    )
-    sheets_row_id = Column(
-        String,
-        nullable=True,
-        index=True,
-        comment="Google Sheets row ID for tracking sync",
     )
 
     # Relationships
@@ -81,8 +79,7 @@ class Task(Base):
         CheckConstraint("type IN ('text', 'audio', 'video')", name="check_valid_type"),
         CheckConstraint(
             "(type = 'text' AND content_text IS NOT NULL) OR "
-            "(type = 'audio' AND content_audio_url IS NOT NULL) OR "
-            "(type = 'video' AND content_video_url IS NOT NULL)",
+            "(type IN ('audio', 'video') AND content_url IS NOT NULL)",
             name="check_content_by_type",
         ),
         CheckConstraint("status IN ('draft', 'published')", name="check_valid_status"),
@@ -92,4 +89,4 @@ class Task(Base):
 
     def __repr__(self) -> str:
         """String representation of Task."""
-        return f"<Task(id={self.id}, level={self.level}, type={self.type}, status={self.status})>"
+        return f"<Task(sheets_row_id={self.sheets_row_id}, level={self.level}, type={self.type}, status={self.status})>"

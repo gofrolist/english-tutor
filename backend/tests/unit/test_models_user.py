@@ -22,7 +22,6 @@ class TestUserModel:
         db_session.add(user)
         db_session.commit()
 
-        assert user.id is not None
         assert user.telegram_user_id == "12345"
         assert user.username == "testuser"
         assert user.current_level is None

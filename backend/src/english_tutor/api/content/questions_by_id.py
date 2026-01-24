@@ -5,7 +5,6 @@ REST API endpoints for managing individual questions by ID.
 
 from datetime import datetime
 from typing import Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,13 +25,12 @@ class QuestionResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID
-    task_id: UUID
+    sheets_row_id: str
+    task_id: str
     question_text: str
     answer_options: list[str]
     correct_answer: int
     weight: float
-    order: int
     created_at: datetime
     updated_at: datetime
 
@@ -44,18 +42,17 @@ class QuestionUpdate(BaseModel):
     answer_options: Optional[list[str]] = Field(None, description="List of answer options")
     correct_answer: Optional[int] = Field(None, description="Index of correct answer")
     weight: Optional[float] = Field(None, description="Weight for scoring")
-    order: Optional[int] = Field(None, description="Display order within task")
 
 
 @router.get("/{question_id}", response_model=QuestionResponse)
 def get_question_by_id(
-    question_id: UUID,
+    question_id: str,
     db: Session = Depends(get_db),
 ) -> QuestionResponse:
     """Get a question by ID.
 
     Args:
-        question_id: Question UUID
+        question_id: Question sheets_row_id
         db: Database session
 
     Returns:
@@ -64,7 +61,7 @@ def get_question_by_id(
     Raises:
         HTTPException: If question not found
     """
-    question = db.query(Question).filter(Question.id == question_id).first()
+    question = db.query(Question).filter(Question.sheets_row_id == question_id).first()
 
     if not question:
         raise HTTPException(
@@ -77,14 +74,14 @@ def get_question_by_id(
 
 @router.put("/{question_id}", response_model=QuestionResponse)
 def update_question_by_id(
-    question_id: UUID,
+    question_id: str,
     question_data: QuestionUpdate,
     db: Session = Depends(get_db),
 ) -> QuestionResponse:
     """Update a question by ID.
 
     Args:
-        question_id: Question UUID
+        question_id: Question sheets_row_id
         question_data: Question update data
         db: Database session
 
@@ -94,7 +91,7 @@ def update_question_by_id(
     Raises:
         HTTPException: If question not found or validation fails
     """
-    question = db.query(Question).filter(Question.id == question_id).first()
+    question = db.query(Question).filter(Question.sheets_row_id == question_id).first()
 
     if not question:
         raise HTTPException(
@@ -138,18 +135,10 @@ def update_question_by_id(
                 )
             question.weight = question_data.weight
 
-        if question_data.order is not None:
-            if question_data.order <= 0:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="order must be positive",
-                )
-            question.order = question_data.order
-
         db.commit()
         db.refresh(question)
 
-        logger.info("Question updated by ID", extra={"question_id": str(question.id)})
+        logger.info("Question updated by ID", extra={"question_id": question.sheets_row_id})
 
         return QuestionResponse.model_validate(question)
     except HTTPException:
@@ -169,19 +158,19 @@ def update_question_by_id(
 
 @router.delete("/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_question_by_id(
-    question_id: UUID,
+    question_id: str,
     db: Session = Depends(get_db),
 ) -> None:
     """Delete a question by ID.
 
     Args:
-        question_id: Question UUID
+        question_id: Question sheets_row_id
         db: Database session
 
     Raises:
         HTTPException: If question not found
     """
-    question = db.query(Question).filter(Question.id == question_id).first()
+    question = db.query(Question).filter(Question.sheets_row_id == question_id).first()
 
     if not question:
         raise HTTPException(
