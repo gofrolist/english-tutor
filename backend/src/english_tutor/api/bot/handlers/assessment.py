@@ -133,10 +133,11 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
 
             # Ask if user is ready
+            # Use | as separator to avoid conflicts with underscores in assessment_id
             keyboard = [
                 [
                     InlineKeyboardButton(
-                        "YES!", callback_data=f"start_assessment_ready_{assessment.sheets_row_id}"
+                        "YES!", callback_data=f"start_assessment_ready|{assessment.sheets_row_id}"
                     )
                 ]
             ]
@@ -177,14 +178,13 @@ async def handle_assessment_ready(
 
     try:
         # Extract assessment ID from callback data
-        # Format: "start_assessment_ready_{assessment_id}"
+        # Format: "start_assessment_ready|{assessment_id}" (using | to avoid conflicts with underscores)
         callback_data = query.data
-        parts = callback_data.split("_")
-        if len(parts) != 4:
+        if not callback_data.startswith("start_assessment_ready|"):
             await safe_edit_message_text(query, "Неверный формат данных.")
             return
 
-        assessment_id_str = parts[3]
+        assessment_id_str = callback_data.split("|", 1)[1]
 
         # Verify assessment exists and is in progress
         assessment = (

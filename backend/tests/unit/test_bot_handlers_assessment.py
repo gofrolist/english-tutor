@@ -14,6 +14,7 @@ from telegram import User as TelegramUser
 from src.english_tutor.api.bot.handlers.assessment import (
     assess_command,
     handle_assessment_answer,
+    handle_assessment_ready,
     send_assessment_question,
 )
 from src.english_tutor.models.assessment import Assessment, AssessmentStatus
@@ -493,3 +494,118 @@ class TestAssessmentHandlers:
 
         # Verify completion was triggered
         mock_complete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_assessment_ready_with_underscore_in_id(
+        self, db_session, mock_update_callback_query, mock_context
+    ):
+        """Test that handle_assessment_ready correctly parses callback data with underscores in assessment_id."""
+        # Create test data
+        user = User(telegram_user_id="12345", is_active=True)
+        db_session.add(user)
+        db_session.commit()
+
+        question = AssessmentQuestion(
+            level="A1",
+            question_text="Test question?",
+            answer_options=["Option 1", "Option 2"],
+            correct_answer=0,
+            weight=1.0,
+            sheets_row_id="test-row-007",
+        )
+        db_session.add(question)
+        db_session.commit()
+
+        # Use assessment_id with underscores (like the real ones: assessment_1769242794044)
+        assessment = Assessment(
+            sheets_row_id="assessment_1769242794044",  # Contains underscore!
+            user_id=user.telegram_user_id,
+            questions=[question.sheets_row_id],
+            answers={},
+            score=0.0,
+            status=AssessmentStatus.IN_PROGRESS,
+        )
+        db_session.add(assessment)
+        db_session.commit()
+
+        # Set callback data with | separator (new format)
+        mock_update_callback_query.callback_query.data = (
+            f"start_assessment_ready|{assessment.sheets_row_id}"
+        )
+
+        # Mock get_session_local to return our test session
+        with patch(
+            "src.english_tutor.api.bot.handlers.assessment.get_session_local",
+            return_value=self._mock_session_local(db_session),
+        ):
+            # Mock send_assessment_question to avoid full flow
+            with patch(
+                "src.english_tutor.api.bot.handlers.assessment.send_assessment_question"
+            ) as mock_send:
+                mock_send.return_value = AsyncMock()
+                # Call function
+                await handle_assessment_ready(mock_update_callback_query, mock_context)
+
+        # Verify no error message was sent
+        edit_calls = [
+            call
+            for call in mock_update_callback_query.callback_query.edit_message_text.call_args_list
+            if "Неверный формат данных" in str(call)
+        ]
+        assert len(edit_calls) == 0, "Should not show 'Неверный формат данных' error"
+
+        # Verify assessment was found and processed
+        # (edit_message_text should be called with success message)
+        success_calls = [
+            call
+            for call in mock_update_callback_query.callback_query.edit_message_text.call_args_list
+            if "Отлично! Начинаем!" in str(call)
+        ]
+        assert len(success_calls) > 0, "Should show success message"
+
+        # Verify send_assessment_question was called
+        mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_assessment_ready_rejects_invalid_callback_format(
+        self, db_session, mock_update_callback_query, mock_context
+    ):
+        """Test that handle_assessment_ready rejects invalid callback data formats."""
+        # Set invalid callback data (old format with underscores that would fail)
+        mock_update_callback_query.callback_query.data = "start_assessment_ready_assessment_123"
+
+        # Mock get_session_local to return our test session
+        with patch(
+            "src.english_tutor.api.bot.handlers.assessment.get_session_local",
+            return_value=self._mock_session_local(db_session),
+        ):
+            # Call function
+            await handle_assessment_ready(mock_update_callback_query, mock_context)
+
+        # Verify error message was sent
+        mock_update_callback_query.callback_query.edit_message_text.assert_called_once()
+        call_args = mock_update_callback_query.callback_query.edit_message_text.call_args
+        assert "Неверный формат данных" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_handle_assessment_ready_handles_missing_assessment(
+        self, db_session, mock_update_callback_query, mock_context
+    ):
+        """Test that handle_assessment_ready handles missing assessment gracefully."""
+        # Set callback data with non-existent assessment ID
+        mock_update_callback_query.callback_query.data = (
+            "start_assessment_ready|nonexistent_assessment_123"
+        )
+
+        # Mock get_session_local to return our test session
+        with patch(
+            "src.english_tutor.api.bot.handlers.assessment.get_session_local",
+            return_value=self._mock_session_local(db_session),
+        ):
+            # Call function
+            await handle_assessment_ready(mock_update_callback_query, mock_context)
+
+        # Verify error message was sent
+        mock_update_callback_query.callback_query.edit_message_text.assert_called_once()
+        call_args = mock_update_callback_query.callback_query.edit_message_text.call_args
+        assert "Оценка не найдена" in call_args[0][0]
