@@ -3,6 +3,7 @@
 This service syncs content from Google Sheets and Google Drive to PostgreSQL database.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -19,6 +20,20 @@ from src.english_tutor.utils.exceptions import ContentManagementError
 from src.english_tutor.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Ensure the logger propagates to root logger and is set to INFO level
+logger.setLevel(logging.INFO)
+logger.propagate = True  # Ensure logs propagate to root logger
+
+
+# Helper function to both log and print for visibility
+def log_sync(message: str, level: str = "info") -> None:
+    """Log message and also print to stderr for immediate visibility."""
+    import sys
+
+    getattr(logger, level.lower())(message)
+    print(f"[SYNC {level.upper()}] {message}", file=sys.stderr)
+    sys.stderr.flush()
 
 
 class ContentSyncService:
@@ -80,15 +95,27 @@ class ContentSyncService:
             close_db = False
 
         try:
-            logger.info("Starting content sync from Google Sheets/Drive")
+            log_sync("=" * 80)
+            log_sync("Starting content sync from Google Sheets/Drive")
+            log_sync("=" * 80)
 
             # Read tasks, questions, and assessment questions from Sheets
             try:
+                log_sync("Reading tasks from Google Sheets...")
                 tasks_data = self.sheets_service.read_tasks()
+                log_sync(f"Read {len(tasks_data)} tasks from Google Sheets")
+
+                log_sync("Reading questions from Google Sheets...")
                 questions_data = self.sheets_service.read_questions()
+                log_sync(f"Read {len(questions_data)} questions from Google Sheets")
+
+                log_sync("Reading assessment questions from Google Sheets...")
                 assessment_questions_data = self.sheets_service.read_assessment_questions()
+                log_sync(
+                    f"Read {len(assessment_questions_data)} assessment questions from Google Sheets"
+                )
             except Exception as e:
-                logger.error(f"Failed to read from Google Sheets: {e}")
+                logger.error(f"Failed to read from Google Sheets: {e}", exc_info=True)
                 stats["errors"] += 1
                 raise ContentManagementError(f"Failed to read from Google Sheets: {e}") from e
 
@@ -98,23 +125,40 @@ class ContentSyncService:
                 row_id = task_data.get("row_id")
                 if row_id:
                     tasks_by_row_id[row_id] = task_data
+            log_sync(f"Built task mapping: {len(tasks_by_row_id)} tasks with row_ids")
 
             # Sync tasks
+            log_sync("Syncing tasks to database...")
             task_stats = self._sync_tasks(db, tasks_by_row_id)
             stats.update(task_stats)
+            log_sync(
+                f"Tasks sync completed: {task_stats['tasks_created']} created, "
+                f"{task_stats['tasks_updated']} updated, {task_stats['tasks_deleted']} deleted"
+            )
 
             # Sync questions (after tasks are synced)
+            log_sync("Syncing questions to database...")
             question_stats = self._sync_questions(db, questions_data, tasks_by_row_id)
             stats.update(question_stats)
+            log_sync(
+                f"Questions sync completed: {question_stats['questions_created']} created, "
+                f"{question_stats['questions_updated']} updated, {question_stats['questions_deleted']} deleted"
+            )
 
             # Sync assessment questions
+            log_sync("Syncing assessment questions to database...")
             assessment_question_stats = self._sync_assessment_questions(
                 db, assessment_questions_data
             )
             stats.update(assessment_question_stats)
+            log_sync(
+                f"Assessment questions sync completed: "
+                f"{assessment_question_stats['assessment_questions_created']} created, "
+                f"{assessment_question_stats['assessment_questions_updated']} updated"
+            )
 
             db.commit()
-            logger.info(f"Content sync completed: {stats}")
+            log_sync(f"Content sync completed successfully: {stats}")
 
             return stats
 
@@ -150,11 +194,32 @@ class ContentSyncService:
         # Get all existing tasks with row_id tracking
         # Note: We'll need to add a row_id column to Task model for tracking
         existing_row_ids = set()
+        total_tasks = len(tasks_by_row_id)
+        log_sync(f"Processing {total_tasks} tasks from Google Sheets")
 
         # Process each task from Sheets
-        for row_id, task_data in tasks_by_row_id.items():
+        for idx, (row_id, task_data) in enumerate(tasks_by_row_id.items(), 1):
             try:
+                task_title = task_data.get("title", "Unknown")
+                task_level = task_data.get("level", "Unknown")
+                task_type = task_data.get("type", "Unknown")
+
+                log_sync(
+                    f"Processing task [{idx}/{total_tasks}]: {task_title} "
+                    f"(level={task_level}, type={task_type}, row_id={row_id})"
+                )
+
                 # Resolve Drive file IDs to URLs if needed
+                if task_data.get("type") in ("audio", "video"):
+                    drive_id = (
+                        task_data.get("content_audio_drive_id")
+                        or task_data.get("content_video_drive_id")
+                        or task_data.get("content_drive_id")
+                    )
+                    if drive_id:
+                        logger.info(
+                            f"Resolving media URL for task {task_title} (drive_id={drive_id})"
+                        )
                 task_data = self._resolve_media_urls(task_data)
 
                 # Find existing task by row_id (if we have that field)
@@ -166,16 +231,24 @@ class ContentSyncService:
                     self._update_task(existing_task, task_data, row_id)
                     stats["tasks_updated"] += 1
                     existing_row_ids.add(row_id)
-                    logger.debug(f"Updated task: {task_data.get('title')}")
+                    log_sync(
+                        f"✓ Updated task: {task_title} "
+                        f"(sheets_row_id={existing_task.sheets_row_id})"
+                    )
                 else:
                     # Create new task
-                    self._create_task(db, task_data, row_id)
+                    new_task = self._create_task(db, task_data, row_id)
                     stats["tasks_created"] += 1
                     existing_row_ids.add(row_id)
-                    logger.debug(f"Created task: {task_data.get('title')}")
+                    log_sync(
+                        f"✓ Created task: {task_title} (sheets_row_id={new_task.sheets_row_id})"
+                    )
 
             except Exception as e:
-                logger.error(f"Error syncing task {row_id}: {e}")
+                logger.error(
+                    f"✗ Error syncing task {row_id} ({task_data.get('title', 'Unknown')}): {e}",
+                    exc_info=True,
+                )
                 continue
 
         # Mark tasks not in Sheets as deleted (or draft)
@@ -215,16 +288,30 @@ class ContentSyncService:
                     questions_by_task[task_row_id] = []
                 questions_by_task[task_row_id].append(question_data)
 
+        total_task_groups = len(questions_by_task)
+        log_sync(
+            f"Processing questions for {total_task_groups} tasks "
+            f"({len(questions_data)} total questions)"
+        )
+
         # Sync questions for each task
-        for task_row_id, question_list in questions_by_task.items():
+        for task_idx, (task_row_id, question_list) in enumerate(questions_by_task.items(), 1):
             try:
-                # Find the task in database
-                task = self._find_task_by_row_id(
-                    db, task_row_id, tasks_by_row_id.get(task_row_id, {})
+                task_info = tasks_by_row_id.get(task_row_id, {})
+                task_title = task_info.get("title", "Unknown")
+                log_sync(
+                    f"Processing questions for task [{task_idx}/{total_task_groups}]: "
+                    f"{task_title} (row_id={task_row_id}, {len(question_list)} questions)"
                 )
 
+                # Find the task in database
+                task = self._find_task_by_row_id(db, task_row_id, task_info)
+
                 if not task:
-                    logger.warning(f"Task with row_id {task_row_id} not found, skipping questions")
+                    logger.warning(
+                        f"Task with row_id {task_row_id} ({task_title}) not found in database, "
+                        f"skipping {len(question_list)} questions"
+                    )
                     continue
 
                 # Get existing questions for this task
@@ -232,10 +319,14 @@ class ContentSyncService:
                     db.query(Question).filter(Question.task_id == task.sheets_row_id).all()
                 )
                 existing_row_ids = {q.sheets_row_id for q in existing_questions if q.sheets_row_id}
+                logger.info(
+                    f"Found {len(existing_questions)} existing questions for task {task_title}"
+                )
 
                 # Process each question
-                for question_data in question_list:
+                for q_idx, question_data in enumerate(question_list, 1):
                     row_id = question_data.get("row_id")
+                    question_text = question_data.get("question_text", "")[:50]
                     existing_question = None
 
                     # Find existing question by row_id
@@ -250,16 +341,35 @@ class ContentSyncService:
                         self._update_question(existing_question, question_data, row_id)
                         stats["questions_updated"] += 1
                         existing_row_ids.discard(row_id)
+                        logger.info(
+                            f"  ✓ Updated question [{q_idx}/{len(question_list)}]: "
+                            f"{question_text}... (row_id={row_id})"
+                        )
                     else:
                         # Create new question
-                        self._create_question(db, task.sheets_row_id, question_data, row_id)
+                        new_question = self._create_question(
+                            db, task.sheets_row_id, question_data, row_id
+                        )
                         stats["questions_created"] += 1
+                        logger.info(
+                            f"  ✓ Created question [{q_idx}/{len(question_list)}]: "
+                            f"{question_text}... (row_id={row_id}, "
+                            f"sheets_row_id={new_question.sheets_row_id})"
+                        )
 
                 # Delete questions not in Sheets (optional - be careful with this)
                 # For now, we'll leave orphaned questions
+                if existing_row_ids:
+                    logger.info(
+                        f"  Note: {len(existing_row_ids)} questions in DB not found in Sheets "
+                        f"(keeping them as-is)"
+                    )
 
             except Exception as e:
-                logger.error(f"Error syncing questions for task {task_row_id}: {e}")
+                logger.error(
+                    f"Error syncing questions for task {task_row_id}: {e}",
+                    exc_info=True,
+                )
                 continue
 
         return stats
@@ -284,14 +394,20 @@ class ContentSyncService:
             )
             if drive_id:
                 try:
+                    logger.debug(f"Resolving Google Drive file ID to URL: {drive_id}")
                     url = self.drive_service.get_file_download_url(drive_id)
                     task_data["content_url"] = url
+                    logger.debug(f"Successfully resolved drive_id {drive_id} to URL: {url[:50]}...")
                     # Remove drive_id keys
                     task_data.pop("content_audio_drive_id", None)
                     task_data.pop("content_video_drive_id", None)
                     task_data.pop("content_drive_id", None)
                 except Exception as e:
-                    logger.error(f"Failed to resolve media file {drive_id}: {e}")
+                    logger.error(
+                        f"Failed to resolve media file {drive_id} for task "
+                        f"{task_data.get('title', 'Unknown')}: {e}",
+                        exc_info=True,
+                    )
                     # Keep drive_id, sync will fail validation
 
         return task_data
@@ -448,12 +564,25 @@ class ContentSyncService:
             "assessment_questions_updated": 0,
         }
 
+        total_questions = len(assessment_questions_data)
+        log_sync(f"Processing {total_questions} assessment questions from Google Sheets")
+
         # Process each assessment question from Sheets
-        for question_data in assessment_questions_data:
+        for idx, question_data in enumerate(assessment_questions_data, 1):
             try:
                 row_id = question_data.get("row_id")
                 if not row_id:
+                    logger.warning(
+                        f"Skipping assessment question [{idx}/{total_questions}]: missing row_id"
+                    )
                     continue
+
+                question_text = question_data.get("question_text", "")[:50]
+                question_level = question_data.get("level", "Unknown")
+                log_sync(
+                    f"Processing assessment question [{idx}/{total_questions}]: "
+                    f"{question_text}... (level={question_level}, row_id={row_id})"
+                )
 
                 # Find existing question by row_id
                 existing_question = (
@@ -466,18 +595,22 @@ class ContentSyncService:
                     # Update existing question
                     self._update_assessment_question(existing_question, question_data, row_id)
                     stats["assessment_questions_updated"] += 1
-                    question_text = question_data.get("question_text") or ""
-                    logger.debug(f"Updated assessment question: {question_text[:50]}...")
+                    log_sync(
+                        f"  ✓ Updated assessment question: {question_text}... (row_id={row_id})"
+                    )
                 else:
                     # Create new question
-                    self._create_assessment_question(db, question_data, row_id)
+                    new_question = self._create_assessment_question(db, question_data, row_id)
                     stats["assessment_questions_created"] += 1
-                    question_text = question_data.get("question_text") or ""
-                    logger.debug(f"Created assessment question: {question_text[:50]}...")
+                    log_sync(
+                        f"  ✓ Created assessment question: {question_text}... "
+                        f"(row_id={row_id}, sheets_row_id={new_question.sheets_row_id})"
+                    )
 
             except Exception as e:
                 logger.error(
-                    f"Error syncing assessment question {question_data.get('row_id')}: {e}"
+                    f"✗ Error syncing assessment question {question_data.get('row_id')}: {e}",
+                    exc_info=True,
                 )
                 continue
 

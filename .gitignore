@@ -99,3 +99,4 @@ coverage/
 .env.production.local
 
 backend/credentials.json
+backend/supabase/

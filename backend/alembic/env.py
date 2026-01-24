@@ -32,6 +32,7 @@ if config.config_file_name is not None:
 from src.english_tutor.models.base import Base
 from src.english_tutor.models.user import User  # noqa: F401
 from src.english_tutor.models.assessment import Assessment  # noqa: F401
+from src.english_tutor.models.assessment_question import AssessmentQuestion  # noqa: F401
 from src.english_tutor.models.task import Task  # noqa: F401
 from src.english_tutor.models.question import Question  # noqa: F401
 from src.english_tutor.models.progress import Progress  # noqa: F401
