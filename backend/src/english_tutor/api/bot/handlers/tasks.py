@@ -63,20 +63,27 @@ def _download_media(url: str, drive_file_id: str | None) -> tuple[bytes, str]:
     - Uses persistent cache if possible.
     - For Google Drive URLs, ONLY uses Drive API (no URL fallback), to avoid caching HTML pages.
     - For non-Drive URLs, downloads via HTTP and rejects HTML responses.
+    - Always fetches filename from Google Drive metadata when available, even if content is cached.
     """
     cache_key = drive_file_id or url
 
-    cached = media_cache_service.get(cache_key)
-    if cached is not None:
-        # Filename must still be stable; best-effort from URL
-        return cached, _filename_from_url(url)
-
-    # Google Drive: do not fall back to URL download on API errors
+    # Google Drive: always fetch filename from metadata (lightweight operation)
     if drive_file_id:
         try:
             drive_service = GoogleDriveService()
-            content, name, mime = drive_service.download_file(drive_file_id)
+            # Get filename from metadata (fast, doesn't download content)
+            metadata = drive_service.get_file_metadata(drive_file_id)
+            name = str(metadata.get("name") or f"{drive_file_id}")
+            mime = str(metadata.get("mimeType") or "application/octet-stream")
             filename = _ensure_extension(name, mime)
+
+            # Check cache for content
+            cached = media_cache_service.get(cache_key)
+            if cached is not None:
+                return cached, filename
+
+            # Download content if not cached
+            content = drive_service.download_file_content(drive_file_id)
             # Cache only if looks valid (Drive API content shouldn't be HTML, but guard anyway)
             if _looks_like_html(content, mime):
                 raise TaskDeliveryError("Downloaded content looks like an HTML page, not media.")
@@ -90,6 +97,12 @@ def _download_media(url: str, drive_file_id: str | None) -> tuple[bytes, str]:
             raise TaskDeliveryError(
                 f"Файл не найден или недоступен в Google Drive (id={drive_file_id})."
             ) from e
+
+    # Non-Drive URL: check cache first
+    cached = media_cache_service.get(cache_key)
+    if cached is not None:
+        # Filename must still be stable; best-effort from URL
+        return cached, _filename_from_url(url)
 
     # Non-Drive URL fallback
     try:
