@@ -66,36 +66,64 @@ def upgrade() -> None:
 
     # Step 4: Update JSONB fields that store IDs
     # Update assessments.questions (array of question IDs) to use sheets_row_id
+    # Use COALESCE to handle cases where some question IDs don't exist
+    # Only update rows where at least one question can be mapped
     op.execute("""
         UPDATE assessments a
-        SET questions = (
-            SELECT jsonb_agg(q.sheets_row_id)
+        SET questions = COALESCE(
+            (
+                SELECT jsonb_agg(q.sheets_row_id)
+                FROM jsonb_array_elements_text(a.questions) AS old_id
+                JOIN questions q ON q.id::text = old_id
+            ),
+            a.questions  -- Keep original if no questions can be mapped
+        )
+        WHERE a.questions IS NOT NULL
+        AND EXISTS (
+            SELECT 1
             FROM jsonb_array_elements_text(a.questions) AS old_id
             JOIN questions q ON q.id::text = old_id
         )
-        WHERE a.questions IS NOT NULL
     """)
 
     # Update assessments.answers (object mapping question IDs to answers) to use sheets_row_id
+    # Use COALESCE to handle cases where some question IDs don't exist
     op.execute("""
         UPDATE assessments a
-        SET answers = (
-            SELECT jsonb_object_agg(q.sheets_row_id, a.answers->>old_id::text)
+        SET answers = COALESCE(
+            (
+                SELECT jsonb_object_agg(q.sheets_row_id, a.answers->>old_id::text)
+                FROM jsonb_object_keys(a.answers) AS old_id
+                JOIN questions q ON q.id::text = old_id
+            ),
+            a.answers  -- Keep original if no questions can be mapped
+        )
+        WHERE a.answers IS NOT NULL
+        AND EXISTS (
+            SELECT 1
             FROM jsonb_object_keys(a.answers) AS old_id
             JOIN questions q ON q.id::text = old_id
         )
-        WHERE a.answers IS NOT NULL
     """)
 
     # Update progress.answers (object mapping question IDs to answers) to use sheets_row_id
+    # Use COALESCE to handle cases where some question IDs don't exist
     op.execute("""
         UPDATE progress p
-        SET answers = (
-            SELECT jsonb_object_agg(q.sheets_row_id, p.answers->>old_id::text)
+        SET answers = COALESCE(
+            (
+                SELECT jsonb_object_agg(q.sheets_row_id, p.answers->>old_id::text)
+                FROM jsonb_object_keys(p.answers) AS old_id
+                JOIN questions q ON q.id::text = old_id
+            ),
+            p.answers  -- Keep original if no questions can be mapped
+        )
+        WHERE p.answers IS NOT NULL
+        AND EXISTS (
+            SELECT 1
             FROM jsonb_object_keys(p.answers) AS old_id
             JOIN questions q ON q.id::text = old_id
         )
-        WHERE p.answers IS NOT NULL
     """)
 
     # Step 5: Drop foreign key constraints and indexes that reference old primary keys
