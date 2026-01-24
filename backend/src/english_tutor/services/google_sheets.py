@@ -8,6 +8,7 @@ import csv
 import io
 import json
 import os
+import sys
 from typing import Any, Optional
 
 from google.oauth2 import service_account
@@ -18,6 +19,14 @@ from src.english_tutor.utils.exceptions import ContentManagementError
 from src.english_tutor.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+# Helper function to both log and print for visibility
+def log_sync(message: str, level: str = "info") -> None:
+    """Log message and also print to stderr for immediate visibility."""
+    getattr(logger, level.lower())(message)
+    print(f"[SHEETS {level.upper()}] {message}", file=sys.stderr)
+    sys.stderr.flush()
 
 
 class GoogleSheetsService:
@@ -237,8 +246,8 @@ class GoogleSheetsService:
         - answer_options (comma-separated or JSON array)
         - correct_answer (index, 0-based)
         - weight (default 1.0)
-        - order (display order within task)
         - row_id (for tracking updates)
+        Questions are ordered by sheets_row_id
 
         Args:
             sheet_name: Name of the sheet tab containing questions
@@ -250,7 +259,7 @@ class GoogleSheetsService:
             ContentManagementError: If reading from Sheets fails
         """
         try:
-            range_name = f"{sheet_name}!A:G"  # Adjust range based on columns
+            range_name = f"{sheet_name}!A:F"  # A-F: task_row_id, question_text, answer_options, correct_answer, weight, row_id
             result = (
                 self.service.spreadsheets()
                 .values()
@@ -264,6 +273,7 @@ class GoogleSheetsService:
 
             if not values:
                 logger.warning(f"No data found in sheet '{sheet_name}'")
+                log_sync(f"WARNING: No data found in sheet '{sheet_name}'")
                 return []
 
             # First row is header
@@ -272,6 +282,8 @@ class GoogleSheetsService:
 
             # Map headers to indices
             header_map = {h.lower(): i for i, h in enumerate(headers)}
+            logger.info(f"Found headers in '{sheet_name}': {headers}")
+            log_sync(f"Found headers in '{sheet_name}': {headers}")
 
             # Process rows (skip header)
             for row_idx, row in enumerate(values[1:], start=2):
@@ -282,11 +294,21 @@ class GoogleSheetsService:
                     question = self._parse_question_row(row, header_map, row_idx)
                     if question:
                         questions.append(question)
+                    else:
+                        logger.debug(
+                            f"Row {row_idx} parsed but returned None (likely validation failure)"
+                        )
                 except Exception as e:
-                    logger.error(f"Error parsing row {row_idx} in sheet '{sheet_name}': {e}")
+                    logger.error(
+                        f"Error parsing row {row_idx} in sheet '{sheet_name}': {e}", exc_info=True
+                    )
+                    log_sync(f"ERROR parsing row {row_idx}: {e}")
                     continue
 
             logger.info(f"Read {len(questions)} questions from sheet '{sheet_name}'")
+            log_sync(
+                f"Successfully parsed {len(questions)} questions from {len(values) - 1} data rows"
+            )
             return questions
 
         except HttpError as e:
@@ -324,17 +346,12 @@ class GoogleSheetsService:
         answer_options_str = get_cell("answer_options")
         correct_answer_str = get_cell("correct_answer")
         weight_str = get_cell("weight", "1.0")
-        order_str = get_cell("order")
 
         # Validate required fields
-        if (
-            not task_row_id
-            or not question_text
-            or not answer_options_str
-            or not correct_answer_str
-            or not order_str
-        ):
-            logger.warning(f"Row {row_idx}: Missing required fields")
+        if not task_row_id or not question_text or not answer_options_str or not correct_answer_str:
+            logger.warning(
+                f"Row {row_idx}: Missing required fields (task_row_id, question_text, answer_options, or correct_answer)"
+            )
             return None
 
         # Parse answer options (supports JSON, pipe-delimited, semicolon-delimited, or CSV)
@@ -366,23 +383,12 @@ class GoogleSheetsService:
             logger.warning(f"Row {row_idx}: Invalid weight, using default 1.0")
             weight = 1.0
 
-        # Parse order
-        try:
-            order = int(order_str)
-            if order <= 0:
-                logger.warning(f"Row {row_idx}: order must be positive")
-                return None
-        except ValueError:
-            logger.warning(f"Row {row_idx}: Invalid order")
-            return None
-
         return {
             "task_row_id": task_row_id,
             "question_text": question_text,
             "answer_options": answer_options,
             "correct_answer": correct_answer,
             "weight": weight,
-            "order": order,
             "row_id": get_cell("row_id", str(row_idx)),
         }
 

@@ -46,6 +46,8 @@ class TestUserModel:
         user1 = User(telegram_user_id="11111", is_active=True)
         db_session.add(user1)
         db_session.commit()
+        # Expunge user1 from session to avoid identity map conflict
+        db_session.expunge(user1)
 
         user2 = User(telegram_user_id="11111", is_active=True)
         db_session.add(user2)

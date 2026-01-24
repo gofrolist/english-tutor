@@ -4,7 +4,6 @@ Represents a question used for level assessment (separate from task questions).
 """
 
 from datetime import datetime, timezone
-from uuid import uuid4
 
 from sqlalchemy import (
     CheckConstraint,
@@ -14,7 +13,6 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
-    Uuid,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -31,7 +29,13 @@ class AssessmentQuestion(Base):
 
     __tablename__ = "assessment_questions"
 
-    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    sheets_row_id = Column(
+        String,
+        primary_key=True,
+        nullable=False,
+        index=True,
+        comment="Google Sheets row ID for tracking sync",
+    )
     level = Column(
         String,
         nullable=False,
@@ -44,12 +48,6 @@ class AssessmentQuestion(Base):
         Integer, nullable=False, comment="Index of correct answer in answer_options"
     )
     weight = Column(Float, nullable=False, default=1.0, comment="Weight for scoring")
-    sheets_row_id = Column(
-        String,
-        nullable=True,
-        index=True,
-        comment="Google Sheets row ID for tracking sync",
-    )
     created_at = Column(DateTime, default=_utcnow_naive, nullable=False)
     updated_at = Column(DateTime, default=_utcnow_naive, onupdate=_utcnow_naive, nullable=False)
 
@@ -61,4 +59,4 @@ class AssessmentQuestion(Base):
 
     def __repr__(self) -> str:
         """String representation of AssessmentQuestion."""
-        return f"<AssessmentQuestion(id={self.id}, level={self.level})>"
+        return f"<AssessmentQuestion(sheets_row_id={self.sheets_row_id}, level={self.level})>"
