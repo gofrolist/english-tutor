@@ -44,7 +44,7 @@ def get_bot_application() -> Application:
             CallbackQueryHandler(handle_start_continue, pattern="^start_continue$")
         )
         bot_application.add_handler(
-            CallbackQueryHandler(handle_assessment_ready, pattern="^start_assessment_ready_")
+            CallbackQueryHandler(handle_assessment_ready, pattern="^start_assessment_ready\\|")
         )
         bot_application.add_handler(
             CallbackQueryHandler(handle_assessment_answer, pattern="^answer_")
