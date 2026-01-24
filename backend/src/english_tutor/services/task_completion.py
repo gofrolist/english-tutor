@@ -4,7 +4,6 @@ Service for processing task completion and calculating scores.
 """
 
 from datetime import datetime, timezone
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -23,17 +22,17 @@ class TaskCompletionService:
 
     def complete_task(
         self,
-        user_id: UUID,
-        task_id: UUID,
+        user_id: str,
+        task_id: str,
         answers: dict[str, int],
         db: Session,
     ) -> Progress:
         """Complete a task and calculate score.
 
         Args:
-            user_id: User ID
-            task_id: Task ID
-            answers: Dictionary mapping question IDs (as strings) to answer indices
+            user_id: User telegram_user_id
+            task_id: Task sheets_row_id
+            answers: Dictionary mapping question sheets_row_ids (as strings) to answer indices
             db: Database session
 
         Returns:
@@ -42,21 +41,24 @@ class TaskCompletionService:
         Raises:
             TaskDeliveryError: If user, task, or questions not found
         """
-        user = db.query(User).filter(User.id == user_id).first()
+        user = db.query(User).filter(User.telegram_user_id == user_id).first()
         if not user:
-            logger.error("User not found for task completion", extra={"user_id": str(user_id)})
+            logger.error("User not found for task completion", extra={"user_id": user_id})
             raise TaskDeliveryError(f"User not found: {user_id}")
 
-        task = db.query(Task).filter(Task.id == task_id).first()
+        task = db.query(Task).filter(Task.sheets_row_id == task_id).first()
         if not task:
-            logger.error("Task not found", extra={"task_id": str(task_id)})
+            logger.error("Task not found", extra={"task_id": task_id})
             raise TaskDeliveryError(f"Task not found: {task_id}")
 
         questions = (
-            db.query(Question).filter(Question.task_id == task_id).order_by(Question.order).all()
+            db.query(Question)
+            .filter(Question.task_id == task_id)
+            .order_by(Question.sheets_row_id)
+            .all()
         )
         if not questions:
-            logger.error("No questions found for task", extra={"task_id": str(task_id)})
+            logger.error("No questions found for task", extra={"task_id": task_id})
             raise TaskDeliveryError(f"No questions found for task: {task_id}")
 
         # Calculate score
@@ -64,7 +66,7 @@ class TaskCompletionService:
         correct_weight = 0.0
 
         for question in questions:
-            question_id_str = str(question.id)
+            question_id_str = question.sheets_row_id
             total_weight += question.weight
 
             if question_id_str in answers:
@@ -110,8 +112,8 @@ class TaskCompletionService:
         logger.info(
             "Task completed",
             extra={
-                "user_id": str(user_id),
-                "task_id": str(task_id),
+                "user_id": user_id,
+                "task_id": task_id,
                 "score": score,
                 "percentage_correct": percentage_correct,
             },

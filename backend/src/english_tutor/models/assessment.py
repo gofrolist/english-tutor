@@ -5,7 +5,6 @@ Represents an evaluation session to determine English level.
 
 import enum
 from datetime import datetime, timezone
-from uuid import uuid4
 
 from sqlalchemy import (
     CheckConstraint,
@@ -14,7 +13,6 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     String,
-    Uuid,
 )
 from sqlalchemy import (
     Enum as SQLEnum,
@@ -43,16 +41,22 @@ class Assessment(Base):
 
     __tablename__ = "assessments"
 
-    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    sheets_row_id = Column(
+        String,
+        primary_key=True,
+        nullable=False,
+        index=True,
+        comment="Google Sheets row ID for tracking sync",
+    )
+    user_id = Column(String, ForeignKey("users.telegram_user_id"), nullable=False, index=True)
     questions = Column(
-        JSONB, nullable=False, comment="JSON array of question IDs used in assessment"
+        JSONB, nullable=False, comment="JSON array of question sheet_row_ids used in assessment"
     )
     answers = Column(
         JSONB,
         nullable=False,
         default=dict,
-        comment="JSON object mapping question IDs to user answers",
+        comment="JSON object mapping question sheet_row_ids to user answers",
     )
     score = Column(Float, nullable=False, default=0.0)
     resulting_level = Column(
@@ -86,6 +90,6 @@ class Assessment(Base):
     def __repr__(self) -> str:
         """String representation of Assessment."""
         return (
-            f"<Assessment(id={self.id}, user_id={self.user_id}, "
+            f"<Assessment(sheets_row_id={self.sheets_row_id}, user_id={self.user_id}, "
             f"status={self.status}, level={self.resulting_level})>"
         )

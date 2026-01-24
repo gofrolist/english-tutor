@@ -5,7 +5,6 @@ This service syncs content from Google Sheets and Google Drive to PostgreSQL dat
 
 from datetime import datetime, timezone
 from typing import Any, Optional
-from uuid import UUID
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -229,7 +228,9 @@ class ContentSyncService:
                     continue
 
                 # Get existing questions for this task
-                existing_questions = db.query(Question).filter(Question.task_id == task.id).all()
+                existing_questions = (
+                    db.query(Question).filter(Question.task_id == task.sheets_row_id).all()
+                )
                 existing_row_ids = {q.sheets_row_id for q in existing_questions if q.sheets_row_id}
 
                 # Process each question
@@ -251,7 +252,7 @@ class ContentSyncService:
                         existing_row_ids.discard(row_id)
                     else:
                         # Create new question
-                        self._create_question(db, task.id, question_data, row_id)
+                        self._create_question(db, task.sheets_row_id, question_data, row_id)
                         stats["questions_created"] += 1
 
                 # Delete questions not in Sheets (optional - be careful with this)
@@ -274,28 +275,23 @@ class ContentSyncService:
         """
         task_type = task_data.get("type")
 
-        if task_type == "audio":
-            drive_id = task_data.get("content_audio_drive_id")
+        if task_type in ("audio", "video"):
+            # Try both possible field names for backward compatibility
+            drive_id = (
+                task_data.get("content_audio_drive_id")
+                or task_data.get("content_video_drive_id")
+                or task_data.get("content_drive_id")
+            )
             if drive_id:
                 try:
                     url = self.drive_service.get_file_download_url(drive_id)
-                    task_data["content_audio_url"] = url
-                    # Remove drive_id key
+                    task_data["content_url"] = url
+                    # Remove drive_id keys
                     task_data.pop("content_audio_drive_id", None)
-                except Exception as e:
-                    logger.error(f"Failed to resolve audio file {drive_id}: {e}")
-                    # Keep drive_id, sync will fail validation
-
-        elif task_type == "video":
-            drive_id = task_data.get("content_video_drive_id")
-            if drive_id:
-                try:
-                    url = self.drive_service.get_file_download_url(drive_id)
-                    task_data["content_video_url"] = url
-                    # Remove drive_id key
                     task_data.pop("content_video_drive_id", None)
+                    task_data.pop("content_drive_id", None)
                 except Exception as e:
-                    logger.error(f"Failed to resolve video file {drive_id}: {e}")
+                    logger.error(f"Failed to resolve media file {drive_id}: {e}")
                     # Keep drive_id, sync will fail validation
 
         return task_data
@@ -359,14 +355,13 @@ class ContentSyncService:
             type=task_data["type"],
             title=task_data["title"],
             content_text=task_data.get("content_text"),
-            content_audio_url=task_data.get("content_audio_url"),
-            content_video_url=task_data.get("content_video_url"),
+            content_url=task_data.get("content_url"),
             explanation=task_data.get("explanation"),
             status=TaskStatus(task_data.get("status", "draft")),
             sheets_row_id=row_id,
         )
         db.add(task)
-        db.flush()  # Get the ID
+        db.flush()
         return task
 
     def _update_task(self, task: Task, task_data: dict[str, Any], row_id: str) -> None:
@@ -381,8 +376,7 @@ class ContentSyncService:
         task.type = task_data["type"]
         task.title = task_data["title"]
         task.content_text = task_data.get("content_text")
-        task.content_audio_url = task_data.get("content_audio_url")
-        task.content_video_url = task_data.get("content_video_url")
+        task.content_url = task_data.get("content_url")
         task.explanation = task_data.get("explanation")
         task.status = TaskStatus(task_data.get("status", "draft"))
         task.sheets_row_id = row_id
@@ -391,7 +385,7 @@ class ContentSyncService:
     def _create_question(
         self,
         db: Session,
-        task_id: UUID,
+        task_id: str,
         question_data: dict[str, Any],
         row_id: str,
     ) -> Question:
@@ -399,7 +393,7 @@ class ContentSyncService:
 
         Args:
             db: Database session
-            task_id: Parent task ID
+            task_id: Parent task sheets_row_id
             question_data: Question data from Sheets
             row_id: Google Sheets row ID
 
@@ -412,7 +406,6 @@ class ContentSyncService:
             answer_options=question_data["answer_options"],
             correct_answer=question_data["correct_answer"],
             weight=question_data.get("weight", 1.0),
-            order=question_data["order"],
             sheets_row_id=row_id,
         )
         db.add(question)
@@ -433,7 +426,6 @@ class ContentSyncService:
         question.answer_options = question_data["answer_options"]
         question.correct_answer = question_data["correct_answer"]
         question.weight = question_data.get("weight", 1.0)
-        question.order = question_data["order"]
         question.sheets_row_id = row_id
         question.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 

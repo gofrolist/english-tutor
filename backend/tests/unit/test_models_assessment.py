@@ -22,7 +22,8 @@ class TestAssessmentModel:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
+            sheets_row_id="assessment_1",
+            user_id=user.telegram_user_id,
             questions=["q1", "q2", "q3"],
             answers={},
             score=0.0,
@@ -31,8 +32,8 @@ class TestAssessmentModel:
         db_session.add(assessment)
         db_session.commit()
 
-        assert assessment.id is not None
-        assert assessment.user_id == user.id
+        assert assessment.sheets_row_id is not None
+        assert assessment.user_id == user.telegram_user_id
         assert assessment.questions == ["q1", "q2", "q3"]
         assert assessment.answers == {}
         assert assessment.score == 0.0
@@ -48,7 +49,8 @@ class TestAssessmentModel:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
+            sheets_row_id="assessment_2",
+            user_id=user.telegram_user_id,
             questions=[],
             answers={},
             score=0.0,
@@ -65,7 +67,8 @@ class TestAssessmentModel:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
+            sheets_row_id="assessment_3",
+            user_id=user.telegram_user_id,
             questions=["q1", "q2"],
             answers={"q1": 0, "q2": 1},
             score=0.75,  # Use normalized score (0.0-1.0)
@@ -90,7 +93,8 @@ class TestAssessmentModel:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
+            sheets_row_id="assessment_4",
+            user_id=user.telegram_user_id,
             questions=[],
             answers={},
             score=-10.0,
@@ -111,9 +115,10 @@ class TestAssessmentModel:
 
         valid_levels = ["A1", "A2", "B1", "B2", "C1", "C2"]
 
-        for level in valid_levels:
+        for idx, level in enumerate(valid_levels):
             assessment = Assessment(
-                user_id=user.id,
+                sheets_row_id=f"assessment_{idx}",
+                user_id=user.telegram_user_id,
                 questions=[],
                 answers={},
                 score=0.5,  # Use normalized score (0.0-1.0)
@@ -136,7 +141,8 @@ class TestAssessmentModel:
         db_session.commit()
 
         assessment = Assessment(
-            user_id=user.id,
+            sheets_row_id="assessment_6",
+            user_id=user.telegram_user_id,
             questions=["q1"],
             answers={},
             score=0.0,

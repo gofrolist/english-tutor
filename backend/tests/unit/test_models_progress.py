@@ -23,6 +23,7 @@ class TestProgressModel:
         db_session.commit()
 
         task = Task(
+            sheets_row_id="task_1",
             level="B1",
             type="text",
             title="Test Task",
@@ -33,8 +34,8 @@ class TestProgressModel:
         db_session.commit()
 
         progress = Progress(
-            user_id=user.id,
-            task_id=task.id,
+            user_id=user.telegram_user_id,
+            task_id=task.sheets_row_id,
             answers={"q1": 0, "q2": 1},
             score=75.5,
             percentage_correct=75.0,
@@ -44,8 +45,8 @@ class TestProgressModel:
         db_session.commit()
 
         assert progress.id is not None
-        assert progress.user_id == user.id
-        assert progress.task_id == task.id
+        assert progress.user_id == user.telegram_user_id
+        assert progress.task_id == task.sheets_row_id
         assert progress.answers == {"q1": 0, "q2": 1}
         assert progress.score == 75.5
         assert progress.percentage_correct == 75.0
@@ -58,6 +59,7 @@ class TestProgressModel:
         db_session.commit()
 
         task = Task(
+            sheets_row_id="task_2",
             level="B1",
             type="text",
             title="Test Task",
@@ -68,8 +70,8 @@ class TestProgressModel:
         db_session.commit()
 
         progress = Progress(
-            user_id=user.id,
-            task_id=task.id,
+            user_id=user.telegram_user_id,
+            task_id=task.sheets_row_id,
             answers={},
             score=-10.0,
             percentage_correct=0.0,
@@ -88,6 +90,7 @@ class TestProgressModel:
         db_session.commit()
 
         task = Task(
+            sheets_row_id="task_3",
             level="B1",
             type="text",
             title="Test Task",
@@ -98,10 +101,10 @@ class TestProgressModel:
         db_session.commit()
 
         # Valid percentages
-        for percentage in [0.0, 50.0, 100.0]:
+        for idx, percentage in enumerate([0.0, 50.0, 100.0]):
             progress = Progress(
-                user_id=user.id,
-                task_id=task.id,
+                user_id=user.telegram_user_id,
+                task_id=task.sheets_row_id,
                 answers={},
                 score=percentage,
                 percentage_correct=percentage,
@@ -120,6 +123,7 @@ class TestProgressModel:
         db_session.commit()
 
         task = Task(
+            sheets_row_id="task_4",
             level="B1",
             type="text",
             title="Test Task",
@@ -130,8 +134,8 @@ class TestProgressModel:
         db_session.commit()
 
         progress = Progress(
-            user_id=user.id,
-            task_id=task.id,
+            user_id=user.telegram_user_id,
+            task_id=task.sheets_row_id,
             answers={},
             score=80.0,
             percentage_correct=80.0,
@@ -140,7 +144,7 @@ class TestProgressModel:
         db_session.add(progress)
         db_session.commit()
 
-        assert progress.user_id == user.id
+        assert progress.user_id == user.telegram_user_id
         assert progress in user.progress_records
 
     def test_progress_relationship_to_task(self, db_session):
@@ -150,6 +154,7 @@ class TestProgressModel:
         db_session.commit()
 
         task = Task(
+            sheets_row_id="task_5",
             level="B1",
             type="text",
             title="Test Task",
@@ -160,8 +165,8 @@ class TestProgressModel:
         db_session.commit()
 
         progress = Progress(
-            user_id=user.id,
-            task_id=task.id,
+            user_id=user.telegram_user_id,
+            task_id=task.sheets_row_id,
             answers={},
             score=90.0,
             percentage_correct=90.0,
@@ -170,4 +175,4 @@ class TestProgressModel:
         db_session.add(progress)
         db_session.commit()
 
-        assert progress.task_id == task.id
+        assert progress.task_id == task.sheets_row_id

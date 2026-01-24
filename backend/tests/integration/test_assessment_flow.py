@@ -26,10 +26,12 @@ class TestAssessmentFlow:
         service = AssessmentService()
         # Provide question IDs for the assessment
         question_ids = ["q1", "q2", "q3"]
-        assessment = await service.start_assessment(user.id, db_session, question_ids=question_ids)
+        assessment = await service.start_assessment(
+            user.telegram_user_id, db_session, question_ids=question_ids
+        )
 
         assert assessment.status == "in_progress"
-        assert assessment.user_id == user.id
+        assert assessment.user_id == user.telegram_user_id
         assert len(assessment.questions) > 0
 
         # Step 3: User answers questions
@@ -51,7 +53,7 @@ class TestAssessmentFlow:
 
         # Step 5: Complete assessment
         completed_assessment = await service.complete_assessment(
-            assessment.id,
+            assessment.sheets_row_id,
             answers,
             score,
             level,
@@ -78,7 +80,9 @@ class TestAssessmentFlow:
         db_session.commit()
 
         service = AssessmentService()
-        assessment1 = await service.start_assessment(user.id, db_session, question_ids=["q1", "q2"])
+        assessment1 = await service.start_assessment(
+            user.telegram_user_id, db_session, question_ids=["q1", "q2"]
+        )
 
         # Complete first assessment with lower score
         answers1 = {"q1": 0, "q2": 0}  # All correct for simplicity
@@ -86,7 +90,7 @@ class TestAssessmentFlow:
         level1 = service.determine_level(score1)
 
         await service.complete_assessment(
-            assessment1.id,
+            assessment1.sheets_row_id,
             answers1,
             score1,
             level1,
@@ -98,13 +102,15 @@ class TestAssessmentFlow:
         assert user.current_level == "A2"
 
         # Reassessment with higher score
-        assessment2 = await service.start_assessment(user.id, db_session, question_ids=["q1", "q2"])
+        assessment2 = await service.start_assessment(
+            user.telegram_user_id, db_session, question_ids=["q1", "q2"]
+        )
         answers2 = {"q1": 0, "q2": 0}
         score2 = 0.7  # B2 level
         level2 = service.determine_level(score2)
 
         await service.complete_assessment(
-            assessment2.id,
+            assessment2.sheets_row_id,
             answers2,
             score2,
             level2,
@@ -124,10 +130,12 @@ class TestAssessmentFlow:
         db_session.commit()
 
         service = AssessmentService()
-        assessment = await service.start_assessment(user.id, db_session, question_ids=["q1", "q2"])
+        assessment = await service.start_assessment(
+            user.telegram_user_id, db_session, question_ids=["q1", "q2"]
+        )
 
         # Abandon assessment
-        await service.abandon_assessment(assessment.id, db_session)
+        await service.abandon_assessment(assessment.sheets_row_id, db_session)
 
         db_session.refresh(assessment)
         assert assessment.status == "abandoned"

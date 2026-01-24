@@ -51,7 +51,7 @@ class TestContentManagementFlow:
         response = client.post("/tasks", json=task_data)
         assert response.status_code == 201
         created_task = response.json()
-        task_id = created_task["id"]
+        task_id = created_task["sheets_row_id"]
 
         assert created_task["level"] == "B1"
         assert created_task["type"] == "text"
@@ -64,7 +64,6 @@ class TestContentManagementFlow:
             "answer_options": ["goed", "went", "gone", "going"],
             "correct_answer": 1,
             "weight": 1.0,
-            "order": 1,
         }
 
         response = client.post(f"/tasks/{task_id}/questions", json=question1_data)
@@ -73,14 +72,12 @@ class TestContentManagementFlow:
 
         assert created_question1["question_text"] == "What is the past tense of 'go'?"
         assert created_question1["correct_answer"] == 1
-        assert created_question1["order"] == 1
 
         question2_data = {
             "question_text": "What is the past tense of 'eat'?",
             "answer_options": ["eated", "ate", "eaten", "eating"],
             "correct_answer": 1,
             "weight": 1.0,
-            "order": 2,
         }
 
         response = client.post(f"/tasks/{task_id}/questions", json=question2_data)
@@ -88,7 +85,6 @@ class TestContentManagementFlow:
         created_question2 = response.json()
 
         assert created_question2["question_text"] == "What is the past tense of 'eat'?"
-        assert created_question2["order"] == 2
 
         # Step 3: Verify questions are listed for the task
         response = client.get(f"/tasks/{task_id}/questions")
@@ -96,9 +92,9 @@ class TestContentManagementFlow:
         questions = response.json()
 
         assert len(questions) == 2
-        question_ids = [q["id"] for q in questions]
-        assert created_question1["id"] in question_ids
-        assert created_question2["id"] in question_ids
+        question_ids = [q["sheets_row_id"] for q in questions]
+        assert created_question1["sheets_row_id"] in question_ids
+        assert created_question2["sheets_row_id"] in question_ids
 
         # Step 4: Publish the task
         response = client.post(f"/tasks/{task_id}/publish")
@@ -113,7 +109,7 @@ class TestContentManagementFlow:
         retrieved_task = response.json()
 
         assert retrieved_task["status"] == "published"
-        assert retrieved_task["id"] == task_id
+        assert retrieved_task["sheets_row_id"] == task_id
 
     def test_create_task_with_audio_content(self, client, db_session):
         """Test creating a task with audio content."""
@@ -121,7 +117,7 @@ class TestContentManagementFlow:
             "level": "A2",
             "type": "audio",
             "title": "Listening: Daily Routine",
-            "content_audio_url": "https://example.com/audio.mp3",
+            "content_url": "https://example.com/audio.mp3",
             "status": "draft",
         }
 
@@ -130,7 +126,7 @@ class TestContentManagementFlow:
         created_task = response.json()
 
         assert created_task["type"] == "audio"
-        assert created_task["content_audio_url"] == "https://example.com/audio.mp3"
+        assert created_task["content_url"] == "https://example.com/audio.mp3"
         assert created_task["content_text"] is None
 
     def test_create_task_with_video_content(self, client, db_session):
@@ -139,7 +135,7 @@ class TestContentManagementFlow:
             "level": "C1",
             "type": "video",
             "title": "Video: Academic Presentation",
-            "content_video_url": "https://example.com/video.mp4",
+            "content_url": "https://example.com/video.mp4",
             "status": "draft",
         }
 
@@ -148,7 +144,7 @@ class TestContentManagementFlow:
         created_task = response.json()
 
         assert created_task["type"] == "video"
-        assert created_task["content_video_url"] == "https://example.com/video.mp4"
+        assert created_task["content_url"] == "https://example.com/video.mp4"
         assert created_task["content_text"] is None
 
     def test_update_task_before_publishing(self, client, db_session):
@@ -164,7 +160,7 @@ class TestContentManagementFlow:
 
         response = client.post("/tasks", json=task_data)
         assert response.status_code == 201
-        task_id = response.json()["id"]
+        task_id = response.json()["sheets_row_id"]
 
         # Update task
         update_data = {
@@ -194,7 +190,7 @@ class TestContentManagementFlow:
             "level": "B1",
             "type": "audio",
             "title": "B1 Audio Task",
-            "content_audio_url": "https://example.com/audio.mp3",
+            "content_url": "https://example.com/audio.mp3",
             "status": "draft",
         }
         task3_data = {

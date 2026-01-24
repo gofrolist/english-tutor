@@ -4,9 +4,8 @@ Represents a learner using the bot.
 """
 
 from datetime import datetime, timezone
-from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Index, String, Uuid
+from sqlalchemy import Boolean, Column, DateTime, Index, String
 from sqlalchemy.orm import relationship
 
 from src.english_tutor.models.base import Base
@@ -22,8 +21,7 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    telegram_user_id = Column(String, unique=True, nullable=False, index=True)
+    telegram_user_id = Column(String, primary_key=True, nullable=False, index=True)
     username = Column(String, nullable=True)
     current_level = Column(
         String,
@@ -42,4 +40,4 @@ class User(Base):
 
     def __repr__(self) -> str:
         """String representation of User."""
-        return f"<User(id={self.id}, telegram_user_id={self.telegram_user_id}, level={self.current_level})>"
+        return f"<User(telegram_user_id={self.telegram_user_id}, level={self.current_level})>"

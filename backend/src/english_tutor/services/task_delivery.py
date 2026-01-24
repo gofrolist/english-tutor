@@ -5,7 +5,6 @@ Service for delivering learning tasks to users based on their proficiency level.
 
 import random
 from typing import Optional
-from uuid import UUID
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -116,14 +115,14 @@ class TaskDeliveryService:
 
         return tasks
 
-    def select_task_for_user(self, user_id: UUID, db: Session) -> Optional[Task]:
+    def select_task_for_user(self, user_id: str, db: Session) -> Optional[Task]:
         """Select a task for a user based on their level.
 
         Selects a random published task appropriate for the user's level,
         excluding tasks that the user has already completed.
 
         Args:
-            user_id: User ID
+            user_id: User telegram_user_id
             db: Database session
 
         Returns:
@@ -132,13 +131,13 @@ class TaskDeliveryService:
         Raises:
             TaskDeliveryError: If user not found or has no level
         """
-        user = db.query(User).filter(User.id == user_id).first()
+        user = db.query(User).filter(User.telegram_user_id == user_id).first()
         if not user:
-            logger.error("User not found", extra={"user_id": str(user_id)})
+            logger.error("User not found", extra={"user_id": user_id})
             raise TaskDeliveryError(f"User not found: {user_id}")
 
         if not user.current_level:
-            logger.error("User has no level assigned", extra={"user_id": str(user_id)})
+            logger.error("User has no level assigned", extra={"user_id": user_id})
             raise TaskDeliveryError(f"User has no level assigned: {user_id}")
 
         tasks = self.get_tasks_by_level(user.current_level, db)
@@ -153,13 +152,13 @@ class TaskDeliveryService:
         }
 
         # Filter out completed tasks
-        available_tasks = [task for task in tasks if task.id not in completed_task_ids]
+        available_tasks = [task for task in tasks if task.sheets_row_id not in completed_task_ids]
 
         # If all tasks are completed, return None
         if not available_tasks:
             logger.info(
                 "All tasks completed for user level",
-                extra={"user_id": str(user_id), "level": user.current_level},
+                extra={"user_id": user_id, "level": user.current_level},
             )
             return None
 
@@ -169,8 +168,8 @@ class TaskDeliveryService:
         logger.info(
             "Task selected for user",
             extra={
-                "user_id": str(user_id),
-                "task_id": str(selected_task.id),
+                "user_id": user_id,
+                "task_id": selected_task.sheets_row_id,
                 "level": user.current_level,
                 "available_tasks_count": len(available_tasks),
                 "total_tasks_count": len(tasks),

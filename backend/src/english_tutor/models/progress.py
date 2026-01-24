@@ -6,7 +6,7 @@ Represents user performance tracking for completed tasks.
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Uuid
+from sqlalchemy import CheckConstraint, Column, DateTime, Float, ForeignKey, Index, String, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -24,13 +24,13 @@ class Progress(Base):
     __tablename__ = "progress"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    task_id = Column(Uuid(as_uuid=True), ForeignKey("tasks.id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.telegram_user_id"), nullable=False, index=True)
+    task_id = Column(String, ForeignKey("tasks.sheets_row_id"), nullable=False, index=True)
     answers = Column(
         JSONB,
         nullable=False,
         default=dict,
-        comment="JSON object mapping question IDs to user answers",
+        comment="JSON object mapping question sheet_row_ids to user answers",
     )
     score = Column(Float, nullable=False, default=0.0)
     percentage_correct = Column(Float, nullable=False, default=0.0)

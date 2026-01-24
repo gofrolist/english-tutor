@@ -19,6 +19,7 @@ class TestTaskDeliveryService:
         """Test retrieving tasks filtered by user level."""
         # Create tasks at different levels
         task_a2 = Task(
+            sheets_row_id="task_a2",
             level="A2",
             type="text",
             title="A2 Task",
@@ -26,6 +27,7 @@ class TestTaskDeliveryService:
             status="published",
         )
         task_b1 = Task(
+            sheets_row_id="task_b1",
             level="B1",
             type="text",
             title="B1 Task",
@@ -33,6 +35,7 @@ class TestTaskDeliveryService:
             status="published",
         )
         task_b2 = Task(
+            sheets_row_id="task_b2",
             level="B2",
             type="text",
             title="B2 Task",
@@ -56,6 +59,7 @@ class TestTaskDeliveryService:
     def test_get_tasks_by_level_only_published(self, db_session):
         """Test that only published tasks are returned."""
         task_draft = Task(
+            sheets_row_id="task_draft",
             level="B1",
             type="text",
             title="Draft Task",
@@ -63,6 +67,7 @@ class TestTaskDeliveryService:
             status="draft",
         )
         task_published = Task(
+            sheets_row_id="task_published",
             level="B1",
             type="text",
             title="Published Task",
@@ -76,13 +81,14 @@ class TestTaskDeliveryService:
         service = TaskDeliveryService()
         tasks = service.get_tasks_by_level("B1", db_session)
 
-        task_ids = [task.id for task in tasks]
-        assert task_published.id in task_ids
-        assert task_draft.id not in task_ids
+        task_ids = [task.sheets_row_id for task in tasks]
+        assert task_published.sheets_row_id in task_ids
+        assert task_draft.sheets_row_id not in task_ids
 
     def test_get_tasks_by_level_and_type(self, db_session):
         """Test filtering tasks by level and type."""
         task_text = Task(
+            sheets_row_id="task_text",
             level="B1",
             type="text",
             title="Text Task",
@@ -90,10 +96,11 @@ class TestTaskDeliveryService:
             status="published",
         )
         task_audio = Task(
+            sheets_row_id="audio_task_1",
             level="B1",
             type="audio",
             title="Audio Task",
-            content_audio_url="https://example.com/audio.mp3",
+            content_url="https://example.com/audio.mp3",
             status="published",
         )
 
@@ -117,6 +124,7 @@ class TestTaskDeliveryService:
         db_session.commit()
 
         task1 = Task(
+            sheets_row_id="task_1",
             level="B1",
             type="text",
             title="Task 1",
@@ -124,6 +132,7 @@ class TestTaskDeliveryService:
             status="published",
         )
         task2 = Task(
+            sheets_row_id="task_2",
             level="B1",
             type="text",
             title="Task 2",
@@ -134,7 +143,7 @@ class TestTaskDeliveryService:
         db_session.commit()
 
         service = TaskDeliveryService()
-        selected_task = service.select_task_for_user(user.id, db_session)
+        selected_task = service.select_task_for_user(user.telegram_user_id, db_session)
 
         assert selected_task is not None
         assert selected_task.level in ["A2", "B1", "B2"]
@@ -147,6 +156,7 @@ class TestTaskDeliveryService:
         db_session.commit()
 
         task1 = Task(
+            sheets_row_id="task_1",
             level="B1",
             type="text",
             title="Task 1",
@@ -154,6 +164,7 @@ class TestTaskDeliveryService:
             status="published",
         )
         task2 = Task(
+            sheets_row_id="task_2",
             level="B1",
             type="text",
             title="Task 2",
@@ -165,8 +176,8 @@ class TestTaskDeliveryService:
 
         # Mark task1 as completed
         progress = Progress(
-            user_id=user.id,
-            task_id=task1.id,
+            user_id=user.telegram_user_id,
+            task_id=task1.sheets_row_id,
             answers={},
             score=10.0,
             percentage_correct=100.0,
@@ -175,12 +186,12 @@ class TestTaskDeliveryService:
         db_session.commit()
 
         service = TaskDeliveryService()
-        selected_task = service.select_task_for_user(user.id, db_session)
+        selected_task = service.select_task_for_user(user.telegram_user_id, db_session)
 
         # Should select task2, not task1
         assert selected_task is not None
-        assert selected_task.id == task2.id
-        assert selected_task.id != task1.id
+        assert selected_task.sheets_row_id == task2.sheets_row_id
+        assert selected_task.sheets_row_id != task1.sheets_row_id
 
     def test_select_task_for_user_returns_none_when_all_completed(self, db_session):
         """Test that None is returned when all tasks are completed."""
@@ -189,6 +200,7 @@ class TestTaskDeliveryService:
         db_session.commit()
 
         task1 = Task(
+            sheets_row_id="task_1",
             level="B1",
             type="text",
             title="Task 1",
@@ -200,8 +212,8 @@ class TestTaskDeliveryService:
 
         # Mark task1 as completed
         progress = Progress(
-            user_id=user.id,
-            task_id=task1.id,
+            user_id=user.telegram_user_id,
+            task_id=task1.sheets_row_id,
             answers={},
             score=10.0,
             percentage_correct=100.0,
@@ -210,7 +222,7 @@ class TestTaskDeliveryService:
         db_session.commit()
 
         service = TaskDeliveryService()
-        selected_task = service.select_task_for_user(user.id, db_session)
+        selected_task = service.select_task_for_user(user.telegram_user_id, db_session)
 
         # Should return None since all tasks are completed
         assert selected_task is None

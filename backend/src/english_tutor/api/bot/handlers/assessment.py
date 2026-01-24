@@ -4,7 +4,6 @@ Handles assessment initiation, question delivery, answer collection, and result 
 """
 
 from typing import Any
-from uuid import UUID
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -89,7 +88,7 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         existing_assessment = (
             db.query(Assessment)
             .filter(
-                Assessment.user_id == user.id,
+                Assessment.user_id == user.telegram_user_id,
                 Assessment.status == AssessmentStatus.IN_PROGRESS,
             )
             .first()
@@ -97,26 +96,29 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if existing_assessment:
             # Abandon the existing assessment to start a new one
-            await assessment_service.abandon_assessment(existing_assessment.id, db)
+            await assessment_service.abandon_assessment(existing_assessment.sheets_row_id, db)
             # Clear context data from the abandoned assessment
             user_data = _get_user_data(context)
             user_data.pop("current_assessment_id", None)
             user_data.pop("current_question_index", None)
             logger.info(
-                f"Abandoned existing assessment {existing_assessment.id} to start new one",
-                extra={"user_id": str(user.id), "assessment_id": str(existing_assessment.id)},
+                f"Abandoned existing assessment {existing_assessment.sheets_row_id} to start new one",
+                extra={
+                    "user_id": user.telegram_user_id,
+                    "assessment_id": existing_assessment.sheets_row_id,
+                },
             )
 
         # Start new assessment (questions will be selected automatically)
         assessment = await assessment_service.start_assessment(
-            user.id,
+            user.telegram_user_id,
             db,
             question_ids=None,  # None triggers automatic selection
         )
 
         # Store assessment ID in context for answer collection
         user_data = _get_user_data(context)
-        user_data["current_assessment_id"] = str(assessment.id)
+        user_data["current_assessment_id"] = assessment.sheets_row_id
 
         # Get question count for the message
         question_count = len(assessment.questions) if assessment.questions else 0
@@ -134,7 +136,7 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             keyboard = [
                 [
                     InlineKeyboardButton(
-                        "YES!", callback_data=f"start_assessment_ready_{assessment.id}"
+                        "YES!", callback_data=f"start_assessment_ready_{assessment.sheets_row_id}"
                     )
                 ]
             ]
@@ -183,24 +185,25 @@ async def handle_assessment_ready(
             return
 
         assessment_id_str = parts[3]
-        assessment_id = UUID(assessment_id_str)
 
         # Verify assessment exists and is in progress
-        assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
+        assessment = (
+            db.query(Assessment).filter(Assessment.sheets_row_id == assessment_id_str).first()
+        )
         if not assessment or assessment.status != AssessmentStatus.IN_PROGRESS:
             await safe_edit_message_text(query, "Оценка не найдена или уже завершена.")
             return
 
         # Store assessment ID in context
         user_data = _get_user_data(context)
-        user_data["current_assessment_id"] = str(assessment.id)
+        user_data["current_assessment_id"] = assessment.sheets_row_id
         user_data["current_question_index"] = 0
 
         # Edit the message to remove the button and send first question
         await safe_edit_message_text(query, "Отлично! Начинаем! 🚀")
 
         # Send first question
-        await send_assessment_question(update, context, assessment_id, db)
+        await send_assessment_question(update, context, assessment_id_str, db)
     finally:
         db.close()
 
@@ -208,7 +211,7 @@ async def handle_assessment_ready(
 async def send_assessment_question(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    assessment_id: UUID,
+    assessment_id: str,
     db,
 ) -> None:
     """Send an assessment question to the user.
@@ -216,11 +219,11 @@ async def send_assessment_question(
     Args:
         update: Telegram update object.
         context: Bot context.
-        assessment_id: Assessment UUID.
+        assessment_id: Assessment sheets_row_id.
         db: Database session.
     """
     try:
-        assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
+        assessment = db.query(Assessment).filter(Assessment.sheets_row_id == assessment_id).first()
         if not assessment:
             # Handle both message and callback query cases
             if update.message:
@@ -241,11 +244,10 @@ async def send_assessment_question(
 
         # Get current question
         question_id_str = question_ids[current_question_index]
-        question_uuid = (
-            UUID(question_id_str) if isinstance(question_id_str, str) else question_id_str
-        )
         question = (
-            db.query(AssessmentQuestion).filter(AssessmentQuestion.id == question_uuid).first()
+            db.query(AssessmentQuestion)
+            .filter(AssessmentQuestion.sheets_row_id == question_id_str)
+            .first()
         )
 
         if not question:
@@ -358,7 +360,7 @@ async def handle_assessment_answer(
             active_assessment = (
                 db.query(Assessment)
                 .filter(
-                    Assessment.user_id == user.id,
+                    Assessment.user_id == user.telegram_user_id,
                     Assessment.status == AssessmentStatus.IN_PROGRESS,
                 )
                 .order_by(Assessment.started_at.desc())
@@ -367,7 +369,7 @@ async def handle_assessment_answer(
 
             if active_assessment:
                 # Restore context from database
-                assessment_id_str = str(active_assessment.id)
+                assessment_id_str = active_assessment.sheets_row_id
                 user_data = _get_user_data(context)
                 user_data["current_assessment_id"] = assessment_id_str
                 # Calculate current question index from answers
@@ -378,7 +380,7 @@ async def handle_assessment_answer(
                 logger.info(
                     "Restored assessment context from database",
                     extra={
-                        "user_id": str(user.id),
+                        "user_id": user.telegram_user_id,
                         "assessment_id": assessment_id_str,
                     },
                 )
@@ -388,8 +390,9 @@ async def handle_assessment_answer(
                 )
                 return
 
-        assessment_id = UUID(assessment_id_str)
-        assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
+        assessment = (
+            db.query(Assessment).filter(Assessment.sheets_row_id == assessment_id_str).first()
+        )
 
         if not assessment or assessment.status != AssessmentStatus.IN_PROGRESS:
             await safe_edit_message_text(query, "Оценка не найдена или уже завершена.")
@@ -424,7 +427,7 @@ async def handle_assessment_answer(
                 "Question index out of range",
                 extra={
                     "user_id": user_telegram_id,
-                    "assessment_id": str(assessment_id),
+                    "assessment_id": assessment_id_str,
                     "question_index": question_index,
                     "total_questions": len(question_ids),
                 },
@@ -450,7 +453,7 @@ async def handle_assessment_answer(
                 "Failed to commit answer to database",
                 extra={
                     "user_id": user_telegram_id,
-                    "assessment_id": str(assessment_id),
+                    "assessment_id": assessment_id_str,
                     "question_id": question_id_str,
                     "error": str(e),
                 },
@@ -472,11 +475,11 @@ async def handle_assessment_answer(
             question_number = question_index + 1
             await send_motivational_message(update, question_number)
 
-            await send_assessment_question(update, context, assessment_id, db)
+            await send_assessment_question(update, context, assessment_id_str, db)
         else:
             # All questions answered, complete assessment
             await safe_answer_callback_query(query, "Последний ответ записан!")
-            await complete_and_deliver_result(update, context, assessment_id, db)
+            await complete_and_deliver_result(update, context, assessment_id_str, db)
     except Exception as e:
         # Log any unexpected errors to help diagnose silent failures
         logger.error(
@@ -507,7 +510,7 @@ async def handle_assessment_answer(
 async def complete_and_deliver_result(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    assessment_id: UUID,
+    assessment_id: str,
     db,
 ) -> None:
     """Complete assessment and deliver result to user.
@@ -515,11 +518,11 @@ async def complete_and_deliver_result(
     Args:
         update: Telegram update object.
         context: Bot context.
-        assessment_id: Assessment UUID.
+        assessment_id: Assessment sheets_row_id.
         db: Database session.
     """
     try:
-        assessment = db.query(Assessment).filter(Assessment.id == assessment_id).first()
+        assessment = db.query(Assessment).filter(Assessment.sheets_row_id == assessment_id).first()
         if not assessment:
             if update.callback_query:
                 await safe_edit_message_text(update.callback_query, "Оценка не найдена.")
@@ -527,7 +530,7 @@ async def complete_and_deliver_result(
                 await update.message.reply_text("Оценка не найдена.")
             return
 
-        user = db.query(User).filter(User.id == assessment.user_id).first()
+        user = db.query(User).filter(User.telegram_user_id == assessment.user_id).first()
 
         # Get actual questions from database
         question_ids_list = list(assessment.questions) if assessment.questions else []
@@ -578,8 +581,8 @@ async def complete_and_deliver_result(
         if user is not None:
             log_quiz_submission(
                 logger,
-                str(user.telegram_user_id),
-                str(assessment_id),
+                user.telegram_user_id,
+                assessment_id,
                 score,
                 level=level,
             )
