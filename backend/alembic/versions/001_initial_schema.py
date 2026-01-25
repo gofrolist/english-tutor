@@ -60,6 +60,7 @@ def upgrade() -> None:
         sa.Column("level", sa.String(), nullable=False, index=True, comment="English proficiency level: A1, A2, B1, B2, C1, C2"),
         sa.Column("type", sa.String(), nullable=False, index=True, comment="Content type: text, audio, video"),
         sa.Column("title", sa.String(), nullable=False),
+        sa.Column("language_domain", sa.String(), nullable=True, index=True, comment="Language domain: listening, reading, writing, speaking, grammar, vocabulary, pronunciation"),
         sa.Column("content_text", sa.String(), nullable=True, comment="Text content for text-type tasks"),
         sa.Column("content_url", sa.String(), nullable=True, comment="URL for audio/video content"),
         sa.Column("explanation", sa.String(), nullable=True, comment="Educational explanation/rules"),
@@ -74,6 +75,10 @@ def upgrade() -> None:
             name="check_content_by_type",
         ),
         sa.CheckConstraint("status IN ('draft', 'published')", name="check_valid_status"),
+        sa.CheckConstraint(
+            "language_domain IN ('listening', 'reading', 'writing', 'speaking', 'grammar', 'vocabulary', 'pronunciation') OR language_domain IS NULL",
+            name="check_valid_language_domain",
+        ),
     )
     op.create_index("idx_task_level_status", "tasks", ["level", "status"])
     op.create_index("idx_task_type_status", "tasks", ["type", "status"])
