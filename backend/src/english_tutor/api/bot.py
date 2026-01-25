@@ -12,6 +12,7 @@ from src.english_tutor.api.bot.handlers.assessment import (
     handle_assessment_answer,
     handle_assessment_ready,
 )
+from src.english_tutor.api.bot.handlers.progress import progress_command
 from src.english_tutor.api.bot.handlers.start import handle_start_continue, start_command
 from src.english_tutor.api.bot.handlers.tasks import (
     handle_task_answer,
@@ -40,6 +41,7 @@ def get_bot_application() -> Application:
         # Register handlers
         bot_application.add_handler(CommandHandler("start", start_command))
         bot_application.add_handler(CommandHandler("assess", assess_command))
+        bot_application.add_handler(CommandHandler("progress", progress_command))
         bot_application.add_handler(
             CallbackQueryHandler(handle_start_continue, pattern="^start_continue$")
         )
