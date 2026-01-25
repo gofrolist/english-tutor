@@ -26,6 +26,10 @@ class TaskCreate(BaseModel):
     level: str = Field(..., description="English proficiency level (A1-C2)")
     type: str = Field(..., description="Content type (text, audio, video)")
     title: str = Field(..., description="Task title")
+    language_domain: Optional[str] = Field(
+        None,
+        description="Language domain: listening, reading, writing, speaking, grammar, vocabulary, pronunciation",
+    )
     content_text: Optional[str] = Field(None, description="Text content for text-type tasks")
     content_url: Optional[str] = Field(None, description="URL for audio/video content")
     explanation: Optional[str] = Field(None, description="Educational explanation/rules")
@@ -38,6 +42,10 @@ class TaskUpdate(BaseModel):
     level: Optional[str] = Field(None, description="English proficiency level (A1-C2)")
     type: Optional[str] = Field(None, description="Content type (text, audio, video)")
     title: Optional[str] = Field(None, description="Task title")
+    language_domain: Optional[str] = Field(
+        None,
+        description="Language domain: listening, reading, writing, speaking, grammar, vocabulary, pronunciation",
+    )
     content_text: Optional[str] = Field(None, description="Text content for text-type tasks")
     content_url: Optional[str] = Field(None, description="URL for audio/video content")
     explanation: Optional[str] = Field(None, description="Educational explanation/rules")
@@ -53,6 +61,7 @@ class TaskResponse(BaseModel):
     level: str
     type: str
     title: str
+    language_domain: Optional[str]
     content_text: Optional[str]
     content_url: Optional[str]
     explanation: Optional[str]
@@ -154,11 +163,28 @@ def create_task(
             detail=f"Invalid status: {task_data.status}. Must be one of: {', '.join(valid_statuses)}",
         )
 
+    # Validate language_domain if provided
+    valid_domains = [
+        "listening",
+        "reading",
+        "writing",
+        "speaking",
+        "grammar",
+        "vocabulary",
+        "pronunciation",
+    ]
+    if task_data.language_domain and task_data.language_domain not in valid_domains:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid language_domain: {task_data.language_domain}. Must be one of: {', '.join(valid_domains)}",
+        )
+
     try:
         task = Task(
             level=task_data.level,
             type=task_data.type,
             title=task_data.title,
+            language_domain=task_data.language_domain,
             content_text=task_data.content_text,
             content_url=task_data.content_url,
             explanation=task_data.explanation,
@@ -262,6 +288,23 @@ def update_task(
 
         if task_data.title is not None:
             task.title = task_data.title
+
+        if task_data.language_domain is not None:
+            valid_domains = [
+                "listening",
+                "reading",
+                "writing",
+                "speaking",
+                "grammar",
+                "vocabulary",
+                "pronunciation",
+            ]
+            if task_data.language_domain not in valid_domains:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid language_domain: {task_data.language_domain}",
+                )
+            task.language_domain = task_data.language_domain
 
         if task_data.content_text is not None:
             task.content_text = task_data.content_text

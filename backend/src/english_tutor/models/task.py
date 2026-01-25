@@ -57,6 +57,12 @@ class Task(Base):
         comment="Content type: text, audio, video",
     )
     title = Column(String, nullable=False)
+    language_domain = Column(
+        String,
+        nullable=True,
+        index=True,
+        comment="Language domain: listening, reading, writing, speaking, grammar, vocabulary, pronunciation",
+    )
     content_text = Column(String, nullable=True, comment="Text content for text-type tasks")
     content_url = Column(String, nullable=True, comment="URL for audio/video content")
     explanation = Column(String, nullable=True, comment="Educational explanation/rules")
@@ -83,6 +89,10 @@ class Task(Base):
             name="check_content_by_type",
         ),
         CheckConstraint("status IN ('draft', 'published')", name="check_valid_status"),
+        CheckConstraint(
+            "language_domain IN ('listening', 'reading', 'writing', 'speaking', 'grammar', 'vocabulary', 'pronunciation') OR language_domain IS NULL",
+            name="check_valid_language_domain",
+        ),
         Index("idx_task_level_status", "level", "status"),
         Index("idx_task_type_status", "type", "status"),
     )

@@ -133,7 +133,9 @@ class ContentSyncService:
             stats.update(task_stats)
             log_sync(
                 f"Tasks sync completed: {task_stats['tasks_created']} created, "
-                f"{task_stats['tasks_updated']} updated, {task_stats['tasks_deleted']} deleted"
+                f"{task_stats['tasks_updated']} updated, "
+                f"{task_stats.get('tasks_skipped', 0)} skipped (no changes), "
+                f"{task_stats['tasks_deleted']} deleted"
             )
 
             # Sync questions (after tasks are synced)
@@ -142,7 +144,9 @@ class ContentSyncService:
             stats.update(question_stats)
             log_sync(
                 f"Questions sync completed: {question_stats['questions_created']} created, "
-                f"{question_stats['questions_updated']} updated, {question_stats['questions_deleted']} deleted"
+                f"{question_stats['questions_updated']} updated, "
+                f"{question_stats.get('questions_skipped', 0)} skipped (no changes), "
+                f"{question_stats['questions_deleted']} deleted"
             )
 
             # Sync assessment questions
@@ -154,7 +158,8 @@ class ContentSyncService:
             log_sync(
                 f"Assessment questions sync completed: "
                 f"{assessment_question_stats['assessment_questions_created']} created, "
-                f"{assessment_question_stats['assessment_questions_updated']} updated"
+                f"{assessment_question_stats['assessment_questions_updated']} updated, "
+                f"{assessment_question_stats.get('assessment_questions_skipped', 0)} skipped (no changes)"
             )
 
             db.commit()
@@ -188,6 +193,7 @@ class ContentSyncService:
         stats = {
             "tasks_created": 0,
             "tasks_updated": 0,
+            "tasks_skipped": 0,
             "tasks_deleted": 0,
         }
 
@@ -200,14 +206,7 @@ class ContentSyncService:
         # Process each task from Sheets
         for idx, (row_id, task_data) in enumerate(tasks_by_row_id.items(), 1):
             try:
-                task_title = task_data.get("title", "Unknown")
-                task_level = task_data.get("level", "Unknown")
-                task_type = task_data.get("type", "Unknown")
-
-                log_sync(
-                    f"Processing task [{idx}/{total_tasks}]: {task_title} "
-                    f"(level={task_level}, type={task_type}, row_id={row_id})"
-                )
+                log_sync(f"Processing task [{idx}/{total_tasks}]: {row_id}")
 
                 # Resolve Drive file IDs to URLs if needed
                 if task_data.get("type") in ("audio", "video"):
@@ -217,9 +216,7 @@ class ContentSyncService:
                         or task_data.get("content_drive_id")
                     )
                     if drive_id:
-                        logger.info(
-                            f"Resolving media URL for task {task_title} (drive_id={drive_id})"
-                        )
+                        logger.info(f"Resolving media URL for task {row_id} (drive_id={drive_id})")
                 task_data = self._resolve_media_urls(task_data)
 
                 # Find existing task by row_id (if we have that field)
@@ -227,28 +224,28 @@ class ContentSyncService:
                 existing_task = self._find_task_by_row_id(db, row_id, task_data)
 
                 if existing_task:
-                    # Update existing task
-                    self._update_task(existing_task, task_data, row_id)
-                    stats["tasks_updated"] += 1
+                    # Check if data has changed before updating
+                    if self._has_task_changed(existing_task, task_data):
+                        self._update_task(existing_task, task_data, row_id)
+                        stats["tasks_updated"] += 1
+                        log_sync(f"✓ Updated task: {row_id}")
+                    else:
+                        stats["tasks_skipped"] += 1
+                        log_sync(f"⊘ Skipped task: {row_id} (no changes)")
                     existing_row_ids.add(row_id)
-                    log_sync(
-                        f"✓ Updated task: {task_title} "
-                        f"(sheets_row_id={existing_task.sheets_row_id})"
-                    )
                 else:
                     # Create new task
-                    new_task = self._create_task(db, task_data, row_id)
+                    self._create_task(db, task_data, row_id)
                     stats["tasks_created"] += 1
                     existing_row_ids.add(row_id)
-                    log_sync(
-                        f"✓ Created task: {task_title} (sheets_row_id={new_task.sheets_row_id})"
-                    )
+                    log_sync(f"✓ Created task: {row_id}")
 
             except Exception as e:
-                logger.error(
-                    f"✗ Error syncing task {row_id} ({task_data.get('title', 'Unknown')}): {e}",
-                    exc_info=True,
-                )
+                error_msg = f"✗ Error syncing task {row_id}: {e}"
+                logger.error(error_msg, exc_info=True)
+                log_sync(f"✗ Error task: {row_id} - {e}", level="error")
+                stats.setdefault("errors", 0)
+                stats["errors"] += 1
                 continue
 
         # Mark tasks not in Sheets as deleted (or draft)
@@ -276,6 +273,7 @@ class ContentSyncService:
         stats = {
             "questions_created": 0,
             "questions_updated": 0,
+            "questions_skipped": 0,
             "questions_deleted": 0,
         }
 
@@ -288,28 +286,17 @@ class ContentSyncService:
                     questions_by_task[task_row_id] = []
                 questions_by_task[task_row_id].append(question_data)
 
-        total_task_groups = len(questions_by_task)
-        log_sync(
-            f"Processing questions for {total_task_groups} tasks "
-            f"({len(questions_data)} total questions)"
-        )
-
         # Sync questions for each task
         for task_idx, (task_row_id, question_list) in enumerate(questions_by_task.items(), 1):
             try:
                 task_info = tasks_by_row_id.get(task_row_id, {})
-                task_title = task_info.get("title", "Unknown")
-                log_sync(
-                    f"Processing questions for task [{task_idx}/{total_task_groups}]: "
-                    f"{task_title} (row_id={task_row_id}, {len(question_list)} questions)"
-                )
 
                 # Find the task in database
                 task = self._find_task_by_row_id(db, task_row_id, task_info)
 
                 if not task:
                     logger.warning(
-                        f"Task with row_id {task_row_id} ({task_title}) not found in database, "
+                        f"Task with row_id {task_row_id} not found in database, "
                         f"skipping {len(question_list)} questions"
                     )
                     continue
@@ -319,43 +306,38 @@ class ContentSyncService:
                     db.query(Question).filter(Question.task_id == task.sheets_row_id).all()
                 )
                 existing_row_ids = {q.sheets_row_id for q in existing_questions if q.sheets_row_id}
-                logger.info(
-                    f"Found {len(existing_questions)} existing questions for task {task_title}"
-                )
 
                 # Process each question
                 for q_idx, question_data in enumerate(question_list, 1):
                     row_id = question_data.get("row_id")
-                    question_text = question_data.get("question_text", "")[:50]
+                    if not row_id:
+                        continue
+
+                    log_sync(f"Processing questions [{q_idx}/{len(question_list)}]: {row_id}")
+
                     existing_question = None
 
                     # Find existing question by row_id
-                    if row_id:
-                        for q in existing_questions:
-                            if q.sheets_row_id == row_id:
-                                existing_question = q
-                                break
+                    for q in existing_questions:
+                        if q.sheets_row_id == row_id:
+                            existing_question = q
+                            break
 
                     if existing_question:
-                        # Update existing question
-                        self._update_question(existing_question, question_data, row_id)
-                        stats["questions_updated"] += 1
+                        # Check if data has changed before updating
+                        if self._has_question_changed(existing_question, question_data):
+                            self._update_question(existing_question, question_data, row_id)
+                            stats["questions_updated"] += 1
+                            log_sync(f"  ✓ Updated question: {row_id}")
+                        else:
+                            stats["questions_skipped"] += 1
+                            log_sync(f"  ⊘ Skipped question: {row_id} (no changes)")
                         existing_row_ids.discard(row_id)
-                        logger.info(
-                            f"  ✓ Updated question [{q_idx}/{len(question_list)}]: "
-                            f"{question_text}... (row_id={row_id})"
-                        )
                     else:
                         # Create new question
-                        new_question = self._create_question(
-                            db, task.sheets_row_id, question_data, row_id
-                        )
+                        self._create_question(db, task.sheets_row_id, question_data, row_id)
                         stats["questions_created"] += 1
-                        logger.info(
-                            f"  ✓ Created question [{q_idx}/{len(question_list)}]: "
-                            f"{question_text}... (row_id={row_id}, "
-                            f"sheets_row_id={new_question.sheets_row_id})"
-                        )
+                        log_sync(f"  ✓ Created question: {row_id}")
 
                 # Delete questions not in Sheets (optional - be careful with this)
                 # For now, we'll leave orphaned questions
@@ -366,10 +348,9 @@ class ContentSyncService:
                     )
 
             except Exception as e:
-                logger.error(
-                    f"Error syncing questions for task {task_row_id}: {e}",
-                    exc_info=True,
-                )
+                error_msg = f"Error syncing questions for task {task_row_id}: {e}"
+                logger.error(error_msg, exc_info=True)
+                log_sync(f"✗ Error questions for task {task_row_id}: {e}", level="error")
                 continue
 
         return stats
@@ -470,6 +451,7 @@ class ContentSyncService:
             level=task_data["level"],
             type=task_data["type"],
             title=task_data["title"],
+            language_domain=task_data.get("language_domain"),
             content_text=task_data.get("content_text"),
             content_url=task_data.get("content_url"),
             explanation=task_data.get("explanation"),
@@ -479,6 +461,34 @@ class ContentSyncService:
         db.add(task)
         db.flush()
         return task
+
+    def _has_task_changed(self, task: Task, task_data: dict[str, Any]) -> bool:
+        """Check if task data has changed.
+
+        Args:
+            task: Existing Task instance
+            task_data: Task data from Sheets
+
+        Returns:
+            True if data has changed, False otherwise
+        """
+        if task.level != task_data["level"]:
+            return True
+        if task.type != task_data["type"]:
+            return True
+        if task.title != task_data["title"]:
+            return True
+        if task.language_domain != task_data.get("language_domain"):
+            return True
+        if task.content_text != task_data.get("content_text"):
+            return True
+        if task.content_url != task_data.get("content_url"):
+            return True
+        if task.explanation != task_data.get("explanation"):
+            return True
+        if task.status != TaskStatus(task_data.get("status", "draft")):
+            return True
+        return False
 
     def _update_task(self, task: Task, task_data: dict[str, Any], row_id: str) -> None:
         """Update existing task with data from Sheets.
@@ -491,6 +501,7 @@ class ContentSyncService:
         task.level = task_data["level"]
         task.type = task_data["type"]
         task.title = task_data["title"]
+        task.language_domain = task_data.get("language_domain")
         task.content_text = task_data.get("content_text")
         task.content_url = task_data.get("content_url")
         task.explanation = task_data.get("explanation")
@@ -528,6 +539,28 @@ class ContentSyncService:
         db.flush()
         return question
 
+    def _has_question_changed(self, question: Question, question_data: dict[str, Any]) -> bool:
+        """Check if question data has changed.
+
+        Args:
+            question: Existing Question instance
+            question_data: Question data from Sheets
+
+        Returns:
+            True if data has changed, False otherwise
+        """
+        # Compare JSONB fields - answer_options is stored as JSONB
+        if question.answer_options != question_data["answer_options"]:
+            return True
+        if question.question_text != question_data["question_text"]:
+            return True
+        if question.correct_answer != question_data["correct_answer"]:
+            return True
+        # Float comparison with tolerance
+        if abs(question.weight - question_data.get("weight", 1.0)) > 0.0001:
+            return True
+        return False
+
     def _update_question(
         self, question: Question, question_data: dict[str, Any], row_id: str
     ) -> None:
@@ -562,10 +595,10 @@ class ContentSyncService:
         stats = {
             "assessment_questions_created": 0,
             "assessment_questions_updated": 0,
+            "assessment_questions_skipped": 0,
         }
 
         total_questions = len(assessment_questions_data)
-        log_sync(f"Processing {total_questions} assessment questions from Google Sheets")
 
         # Process each assessment question from Sheets
         for idx, question_data in enumerate(assessment_questions_data, 1):
@@ -577,12 +610,7 @@ class ContentSyncService:
                     )
                     continue
 
-                question_text = question_data.get("question_text", "")[:50]
-                question_level = question_data.get("level", "Unknown")
-                log_sync(
-                    f"Processing assessment question [{idx}/{total_questions}]: "
-                    f"{question_text}... (level={question_level}, row_id={row_id})"
-                )
+                log_sync(f"Processing assessment [{idx}/{total_questions}]: {row_id}")
 
                 # Find existing question by row_id
                 existing_question = (
@@ -592,26 +620,25 @@ class ContentSyncService:
                 )
 
                 if existing_question:
-                    # Update existing question
-                    self._update_assessment_question(existing_question, question_data, row_id)
-                    stats["assessment_questions_updated"] += 1
-                    log_sync(
-                        f"  ✓ Updated assessment question: {question_text}... (row_id={row_id})"
-                    )
+                    # Check if data has changed before updating
+                    if self._has_assessment_question_changed(existing_question, question_data):
+                        self._update_assessment_question(existing_question, question_data, row_id)
+                        stats["assessment_questions_updated"] += 1
+                        log_sync(f"  ✓ Updated assessment: {row_id}")
+                    else:
+                        stats["assessment_questions_skipped"] += 1
+                        log_sync(f"  ⊘ Skipped assessment: {row_id} (no changes)")
                 else:
                     # Create new question
-                    new_question = self._create_assessment_question(db, question_data, row_id)
+                    self._create_assessment_question(db, question_data, row_id)
                     stats["assessment_questions_created"] += 1
-                    log_sync(
-                        f"  ✓ Created assessment question: {question_text}... "
-                        f"(row_id={row_id}, sheets_row_id={new_question.sheets_row_id})"
-                    )
+                    log_sync(f"  ✓ Created assessment: {row_id}")
 
             except Exception as e:
-                logger.error(
-                    f"✗ Error syncing assessment question {question_data.get('row_id')}: {e}",
-                    exc_info=True,
-                )
+                row_id = question_data.get("row_id", "unknown")
+                error_msg = f"✗ Error syncing assessment question {row_id}: {e}"
+                logger.error(error_msg, exc_info=True)
+                log_sync(f"✗ Error assessment: {row_id} - {e}", level="error")
                 continue
 
         return stats
@@ -643,6 +670,40 @@ class ContentSyncService:
         db.add(question)
         db.flush()
         return question
+
+    def _has_assessment_question_changed(
+        self,
+        question: AssessmentQuestion,
+        question_data: dict[str, Any],
+    ) -> bool:
+        """Check if assessment question data has changed.
+
+        Args:
+            question: Existing AssessmentQuestion instance
+            question_data: Assessment question data from Sheets
+
+        Returns:
+            True if data has changed, False otherwise
+        """
+        # Compare JSONB fields - answer_options is stored as JSONB, should be list/dict
+        existing_options = question.answer_options
+        new_options = question_data["answer_options"]
+        # JSONB from DB might be list or dict, ensure both are lists for comparison
+        if existing_options != new_options:
+            return True
+
+        # Compare other fields
+        if question.level != question_data["level"]:
+            return True
+        if question.question_text != question_data["question_text"]:
+            return True
+        if question.correct_answer != question_data["correct_answer"]:
+            return True
+        # Float comparison with tolerance
+        if abs(question.weight - question_data.get("weight", 1.0)) > 0.0001:
+            return True
+
+        return False
 
     def _update_assessment_question(
         self,

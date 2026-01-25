@@ -73,14 +73,15 @@ class GoogleSheetsService:
         """Read tasks from Google Sheets.
 
         Expected sheet structure (first row is header):
+        - row_id (for tracking updates)
         - level (A1-C2)
         - type (text/audio/video)
+        - language_domain (listening, reading, writing, speaking, grammar, vocabulary, pronunciation)
         - title
         - content_text (for text tasks)
         - content_drive_id (Google Drive file ID for audio/video tasks)
         - explanation
         - status (draft/published)
-        - row_id (for tracking updates)
 
         Args:
             sheet_name: Name of the sheet tab containing tasks
@@ -92,7 +93,7 @@ class GoogleSheetsService:
             ContentManagementError: If reading from Sheets fails
         """
         try:
-            range_name = f"{sheet_name}!A:H"  # Adjust range based on columns
+            range_name = f"{sheet_name}!A:I"  # A-I: row_id, level, type, language_domain, title, content_text, content_drive_id, explanation, status
             result = (
                 self.service.spreadsheets()
                 .values()
@@ -117,6 +118,7 @@ class GoogleSheetsService:
                 "row_id",
                 "level",
                 "type",
+                "language_domain",
                 "title",
                 "content_text",
                 "content_drive_id",
@@ -181,6 +183,7 @@ class GoogleSheetsService:
         level = get_cell("level")
         task_type = get_cell("type")
         title = get_cell("title")
+        language_domain = get_cell("language_domain")
         status = get_cell("status", "draft")
 
         # Validate required fields
@@ -200,6 +203,25 @@ class GoogleSheetsService:
             logger.warning(f"Row {row_idx}: Invalid type '{task_type}'")
             return None
 
+        # Validate language_domain (optional field)
+        valid_domains = [
+            "listening",
+            "reading",
+            "writing",
+            "speaking",
+            "grammar",
+            "vocabulary",
+            "pronunciation",
+        ]
+        if language_domain and language_domain not in valid_domains:
+            error_msg = (
+                f"Row {row_idx} (row_id={get_cell('row_id', str(row_idx))}): "
+                f"Invalid language_domain '{language_domain}', must be one of {valid_domains}"
+            )
+            logger.warning(error_msg)
+            log_sync(f"ERROR: {error_msg}", level="error")
+            return None
+
         # Validate status
         valid_statuses = ["draft", "published"]
         if status not in valid_statuses:
@@ -210,6 +232,7 @@ class GoogleSheetsService:
             "level": level,
             "type": task_type,
             "title": title,
+            "language_domain": language_domain if language_domain else None,
             "status": status,
             "explanation": get_cell("explanation"),
             "row_id": get_cell("row_id", str(row_idx)),  # Use row number if not provided
@@ -571,42 +594,61 @@ class GoogleSheetsService:
 
         # Validate required fields
         if not level or not question_text or not answer_options_str or not correct_answer_str:
-            logger.warning(f"Row {row_idx}: Missing required fields")
+            error_msg = f"Row {row_idx} (row_id={row_id}): Missing required fields (level, question_text, answer_options, or correct_answer)"
+            logger.warning(error_msg)
+            log_sync(f"ERROR: {error_msg}", level="error")
             return None
 
         # Validate level
         valid_levels = ["A1", "A2", "B1", "B2", "C1", "C2"]
         if level not in valid_levels:
-            logger.warning(f"Row {row_idx}: Invalid level '{level}', must be one of {valid_levels}")
+            error_msg = f"Row {row_idx} (row_id={row_id}): Invalid level '{level}', must be one of {valid_levels}"
+            logger.warning(error_msg)
+            log_sync(f"ERROR: {error_msg}", level="error")
             return None
 
         # Parse answer options (supports JSON, pipe-delimited, semicolon-delimited, or CSV)
         answer_options = self._parse_answer_options(answer_options_str, row_idx)
         if answer_options is None:
+            error_msg = f"Row {row_idx} (row_id={row_id}): Failed to parse answer_options '{answer_options_str}'"
+            logger.warning(error_msg)
+            log_sync(f"ERROR: {error_msg}", level="error")
             return None
 
         if not answer_options or len(answer_options) < 2:
-            logger.warning(f"Row {row_idx}: Need at least 2 answer options")
+            error_msg = f"Row {row_idx} (row_id={row_id}): Need at least 2 answer options, got {len(answer_options) if answer_options else 0}"
+            logger.warning(error_msg)
+            log_sync(f"ERROR: {error_msg}", level="error")
             return None
 
         # Parse correct answer index
         try:
             correct_answer = int(correct_answer_str)
             if correct_answer < 0 or correct_answer >= len(answer_options):
-                logger.warning(f"Row {row_idx}: correct_answer index out of range")
+                error_msg = f"Row {row_idx} (row_id={row_id}): correct_answer index {correct_answer} out of range [0, {len(answer_options) - 1}]"
+                logger.warning(error_msg)
+                log_sync(f"ERROR: {error_msg}", level="error")
                 return None
         except ValueError:
-            logger.warning(f"Row {row_idx}: Invalid correct_answer (must be integer)")
+            error_msg = f"Row {row_idx} (row_id={row_id}): Invalid correct_answer '{correct_answer_str}' (must be integer)"
+            logger.warning(error_msg)
+            log_sync(f"ERROR: {error_msg}", level="error")
             return None
 
         # Parse weight
         try:
             weight = float(weight_str) if weight_str else 1.0
             if weight <= 0:
-                logger.warning(f"Row {row_idx}: weight must be positive")
+                error_msg = (
+                    f"Row {row_idx} (row_id={row_id}): weight must be positive, got {weight}"
+                )
+                logger.warning(error_msg)
+                log_sync(f"ERROR: {error_msg}", level="error")
                 return None
         except ValueError:
-            logger.warning(f"Row {row_idx}: Invalid weight, using default 1.0")
+            logger.warning(
+                f"Row {row_idx} (row_id={row_id}): Invalid weight '{weight_str}', using default 1.0"
+            )
             weight = 1.0
 
         return {
