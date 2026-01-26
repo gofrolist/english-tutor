@@ -5,7 +5,14 @@ This module initializes and configures the Telegram bot application.
 
 from telegram import Update
 from telegram.error import BadRequest, NetworkError, RetryAfter, TimedOut
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from src.english_tutor.api.bot.handlers.assessment import (
     assess_command,
@@ -48,12 +55,14 @@ def get_bot_application() -> Application:
         bot_application.add_handler(
             CallbackQueryHandler(handle_assessment_ready, pattern="^start_assessment_ready\\|")
         )
+        # Message handlers for answers (must come before general message handlers)
+        # These handle text messages from reply keyboards during tasks/assessments
         bot_application.add_handler(
-            CallbackQueryHandler(handle_assessment_answer, pattern="^answer_")
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_assessment_answer)
         )
         bot_application.add_handler(CommandHandler("task", task_command))
         bot_application.add_handler(
-            CallbackQueryHandler(handle_task_answer, pattern="^task_answer_")
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_task_answer)
         )
 
         # Register error handler

@@ -5,7 +5,14 @@ Handles assessment initiation, question delivery, answer collection, and result 
 
 from typing import Any
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+)
 from telegram.ext import ContextTypes
 
 from src.english_tutor.api.bot.utils import safe_answer_callback_query, safe_edit_message_text
@@ -17,6 +24,28 @@ from src.english_tutor.services.assessment import AssessmentService
 from src.english_tutor.utils.logger import get_logger, log_quiz_submission, log_user_interaction
 
 logger = get_logger(__name__)
+
+
+def _build_reply_keyboard(options: list[str]) -> ReplyKeyboardMarkup:
+    """Build a reply keyboard with answer options, one button per row.
+
+    Args:
+        options: List of answer option strings.
+
+    Returns:
+        ReplyKeyboardMarkup configured for optimal display.
+    """
+    # Always use one button per row for clarity
+    keyboard = [[KeyboardButton(option)] for option in options]
+
+    return ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        input_field_placeholder="Выберите ответ",
+    )
+
+
 assessment_service = AssessmentService()
 
 
@@ -258,12 +287,13 @@ async def send_assessment_question(
                 await update.callback_query.message.reply_text("Вопрос не найден.")
             return
 
-        # Build keyboard with answer options
-        keyboard = [
-            [InlineKeyboardButton(option, callback_data=f"answer_{current_question_index}_{i}")]
-            for i, option in enumerate(question.answer_options)
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Build reply keyboard with answer options arranged in a grid
+        reply_markup = _build_reply_keyboard(question.answer_options)
+
+        # Store current question info in context for answer matching
+        user_data = _get_user_data(context)
+        user_data["current_question_index"] = current_question_index
+        user_data["current_question_options"] = question.answer_options
 
         # Send question
         question_number = current_question_index + 1
@@ -311,35 +341,36 @@ async def send_motivational_message(
         motivational_message = "Осталось совсем чуть-чуть!\nСовсем скоро узнаем твой уровень😌"
 
     if motivational_message:
-        query = update.callback_query
-        if query and query.message:
-            await query.message.reply_text(motivational_message)
+        message = update.effective_message
+        if message:
+            await message.reply_text(motivational_message)
 
 
 async def handle_assessment_answer(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """Handle assessment answer from inline keyboard callback.
+    """Handle assessment answer from reply keyboard.
 
     Args:
         update: Telegram update object.
         context: Bot context.
     """
-    query = update.callback_query
-    # Answer query safely (may fail silently if expired)
-    # Even if the query is expired, we can still process the answer
-    await safe_answer_callback_query(query)
+    # Only process text messages (from reply keyboard)
+    if not update.message or not update.message.text:
+        return
+
+    # Check if we're in an assessment context - return early if not
+    user_data = _get_user_data(context)
+    if (
+        not user_data.get("current_assessment_id")
+        or user_data.get("current_question_index") is None
+    ):
+        # Not in assessment context, let other handlers process this
+        return
 
     user_telegram_id = str(update.effective_user.id)
-    answer_data = query.data  # Format: "answer_0", "answer_1", etc.
-
-    log_user_interaction(
-        logger,
-        user_telegram_id,
-        "assessment_answer",
-        answer=answer_data,
-    )
+    answer_text = update.message.text.strip()
 
     session_local = get_session_local()
     db = session_local()
@@ -347,13 +378,11 @@ async def handle_assessment_answer(
     try:
         user = db.query(User).filter(User.telegram_user_id == user_telegram_id).first()
         if not user:
-            await safe_edit_message_text(
-                query, "Пользователь не найден. Пожалуйста, начните с /start."
-            )
+            await update.message.reply_text("Пользователь не найден. Пожалуйста, начните с /start.")
             return
 
         # Try to get assessment_id from context first (works when context is available)
-        assessment_id_str = context.user_data.get("current_assessment_id")
+        assessment_id_str = user_data.get("current_assessment_id")
 
         # If context is lost (e.g., after restart), try to find active assessment in database
         if not assessment_id_str:
@@ -370,7 +399,6 @@ async def handle_assessment_answer(
             if active_assessment:
                 # Restore context from database
                 assessment_id_str = active_assessment.sheets_row_id
-                user_data = _get_user_data(context)
                 user_data["current_assessment_id"] = assessment_id_str
                 # Calculate current question index from answers
                 if active_assessment.answers:
@@ -385,8 +413,8 @@ async def handle_assessment_answer(
                     },
                 )
             else:
-                await safe_edit_message_text(
-                    query, "Активная оценка не найдена. Введите /assess для начала."
+                await update.message.reply_text(
+                    "Активная оценка не найдена. Введите /assess для начала."
                 )
                 return
 
@@ -395,47 +423,57 @@ async def handle_assessment_answer(
         )
 
         if not assessment or assessment.status != AssessmentStatus.IN_PROGRESS:
-            await safe_edit_message_text(query, "Оценка не найдена или уже завершена.")
+            await update.message.reply_text("Оценка не найдена или уже завершена.")
             return
 
-        # Extract question index and answer index from callback data
-        # Format: "answer_{question_index}_{answer_index}"
-        parts = answer_data.split("_")
-        if len(parts) != 3:
-            await safe_edit_message_text(query, "Неверный формат ответа.")
-            return
+        # Get current question info from context
+        current_question_index = user_data.get("current_question_index", 0)
+        current_question_options = user_data.get("current_question_options", [])
 
-        try:
-            question_index = int(parts[1])
-            answer_index = int(parts[2])
-        except (ValueError, IndexError) as e:
-            logger.error(
-                "Invalid callback data format",
-                extra={
-                    "user_id": user_telegram_id,
-                    "answer_data": answer_data,
-                    "error": str(e),
-                },
+        if not current_question_options:
+            await update.message.reply_text(
+                "Активный вопрос не найден. Введите /assess для начала."
             )
-            await safe_edit_message_text(query, "Неверный формат ответа.")
             return
+
+        # Find answer index by matching text
+        answer_index = None
+        for i, option in enumerate(current_question_options):
+            if option.strip() == answer_text:
+                answer_index = i
+                break
+
+        if answer_index is None:
+            # Answer doesn't match any option - show error and keep keyboard
+            await update.message.reply_text(
+                "Пожалуйста, выберите один из предложенных вариантов ответа.",
+                reply_markup=_build_reply_keyboard(current_question_options),
+            )
+            return
+
+        log_user_interaction(
+            logger,
+            user_telegram_id,
+            "assessment_answer",
+            answer=f"question_{current_question_index}_option_{answer_index}",
+        )
 
         # Get question ID from assessment
-        question_ids = assessment.questions
-        if question_index >= len(question_ids):
+        question_ids = list(assessment.questions) if assessment.questions else []
+        if current_question_index >= len(question_ids):
             logger.warning(
                 "Question index out of range",
                 extra={
                     "user_id": user_telegram_id,
                     "assessment_id": assessment_id_str,
-                    "question_index": question_index,
+                    "question_index": current_question_index,
                     "total_questions": len(question_ids),
                 },
             )
-            await safe_edit_message_text(query, "Неверный индекс вопроса.")
+            await update.message.reply_text("Неверный индекс вопроса.")
             return
 
-        question_id_str = question_ids[question_index]
+        question_id_str = question_ids[current_question_index]
 
         # Store answer in assessment.answers
         # assessment.answers is JSONB, convert to dict, update, and assign back
@@ -462,23 +500,22 @@ async def handle_assessment_answer(
             raise
 
         # Update context
-        user_data = _get_user_data(context)
-        user_data["current_question_index"] = question_index + 1
+        user_data["current_question_index"] = current_question_index + 1
 
         # Check if more questions remain
-        if question_index + 1 < len(question_ids):
-            # Send next question
-            await safe_answer_callback_query(query, "Ответ записан!")
-
+        if current_question_index + 1 < len(question_ids):
             # Send motivational messages at specific milestones
-            # question_index is 0-indexed, so question_number = question_index + 1
-            question_number = question_index + 1
+            # current_question_index is 0-indexed, so question_number = current_question_index + 1
+            question_number = current_question_index + 1
             await send_motivational_message(update, question_number)
 
             await send_assessment_question(update, context, assessment_id_str, db)
         else:
             # All questions answered, complete assessment
-            await safe_answer_callback_query(query, "Последний ответ записан!")
+            # Remove keyboard first
+            await update.message.reply_text(
+                "✓ Последний ответ записан!", reply_markup=ReplyKeyboardRemove()
+            )
             await complete_and_deliver_result(update, context, assessment_id_str, db)
     except Exception as e:
         # Log any unexpected errors to help diagnose silent failures
@@ -486,7 +523,7 @@ async def handle_assessment_answer(
             "Unexpected error in handle_assessment_answer",
             extra={
                 "user_id": user_telegram_id,
-                "answer_data": answer_data,
+                "answer_text": answer_text,
                 "error_type": type(e).__name__,
                 "error_message": str(e),
             },
@@ -494,9 +531,9 @@ async def handle_assessment_answer(
         )
         # Try to send error message to user if possible
         try:
-            await safe_edit_message_text(
-                query,
+            await update.message.reply_text(
                 "Произошла ошибка при обработке ответа. Пожалуйста, попробуйте снова или начните заново с /assess.",
+                reply_markup=ReplyKeyboardRemove(),
             )
         except Exception:
             # If we can't send message, at least log it
@@ -524,10 +561,9 @@ async def complete_and_deliver_result(
     try:
         assessment = db.query(Assessment).filter(Assessment.sheets_row_id == assessment_id).first()
         if not assessment:
-            if update.callback_query:
-                await safe_edit_message_text(update.callback_query, "Оценка не найдена.")
-            else:
-                await update.message.reply_text("Оценка не найдена.")
+            message = update.effective_message
+            if message:
+                await message.reply_text("Оценка не найдена.")
             return
 
         user = db.query(User).filter(User.telegram_user_id == assessment.user_id).first()
@@ -568,11 +604,10 @@ async def complete_and_deliver_result(
             "Введите /task, чтобы получить первое задание."
         )
 
+        # Send result message
         message = update.effective_message
-        if update.callback_query:
-            await safe_edit_message_text(update.callback_query, result_message)
-        elif message:
-            await message.reply_text(result_message)
+        if message:
+            await message.reply_text(result_message, reply_markup=ReplyKeyboardRemove())
 
         # Clear assessment from context
         context.user_data.pop("current_assessment_id", None)

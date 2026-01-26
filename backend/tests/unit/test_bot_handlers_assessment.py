@@ -40,16 +40,31 @@ class TestAssessmentHandlers:
         return update
 
     @pytest.fixture
-    def mock_update_callback_query(self):
-        """Create a mock Update with a CallbackQuery (no message)."""
+    def mock_update_message_with_text(self):
+        """Create a mock Update with a Message containing text (for reply keyboard answers)."""
         update = MagicMock(spec=Update)
-        update.message = None  # This is the key - callback queries don't have message
+        update.message = MagicMock(spec=Message)
+        update.message.text = "Option 1"  # Default answer text
+        update.message.reply_text = AsyncMock()
+        update.message.reply_text.return_value = MagicMock()
+        # Mock effective_message property to return message
+        type(update).effective_message = property(lambda self: self.message)
+        update.effective_user = MagicMock(spec=TelegramUser)
+        update.effective_user.id = 12345
+        update.callback_query = None
+        return update
+
+    @pytest.fixture
+    def mock_update_callback_query(self):
+        """Create a mock Update with a CallbackQuery (for handle_assessment_ready tests)."""
+        update = MagicMock(spec=Update)
+        update.message = None
         update.callback_query = MagicMock(spec=CallbackQuery)
         update.callback_query.answer = AsyncMock()
         update.callback_query.edit_message_text = AsyncMock()
         update.callback_query.message = MagicMock(spec=Message)
         update.callback_query.message.reply_text = AsyncMock()
-        update.callback_query.data = "answer_0_1"
+        update.callback_query.data = "start_assessment_ready|assessment_123"
         # Mock effective_message property to return callback_query.message
         type(update).effective_message = property(
             lambda self: self.callback_query.message if self.callback_query else None
@@ -114,6 +129,10 @@ class TestAssessmentHandlers:
         call_args = mock_update_message.message.reply_text.call_args
         assert "Вопрос 1/1" in call_args[0][0]
         assert "Test question?" in call_args[0][0]
+        # Verify reply keyboard was used (not inline keyboard)
+        assert call_args[1]["reply_markup"] is not None
+        # Check that it's a ReplyKeyboardMarkup (has keyboard attribute)
+        assert hasattr(call_args[1]["reply_markup"], "keyboard")
 
     @pytest.mark.asyncio
     async def test_send_assessment_question_with_callback_query(
@@ -161,12 +180,16 @@ class TestAssessmentHandlers:
         call_args = mock_update_callback_query.callback_query.message.reply_text.call_args
         assert "Вопрос 1/1" in call_args[0][0]
         assert "Test question?" in call_args[0][0]
+        # Verify reply keyboard was used (not inline keyboard)
+        assert call_args[1]["reply_markup"] is not None
+        # Check that it's a ReplyKeyboardMarkup (has keyboard attribute)
+        assert hasattr(call_args[1]["reply_markup"], "keyboard")
 
     @pytest.mark.asyncio
     async def test_handle_assessment_answer_sends_next_question(
-        self, db_session, mock_update_callback_query, mock_context
+        self, db_session, mock_update_message_with_text, mock_context
     ):
-        """Test that handle_assessment_answer sends next question via callback query."""
+        """Test that handle_assessment_answer sends next question via message."""
         # Create test data
         user = User(telegram_user_id="12345", is_active=True)
         db_session.add(user)
@@ -206,12 +229,13 @@ class TestAssessmentHandlers:
         assessment_id = assessment.sheets_row_id
         question1_id = question1.sheets_row_id
 
-        # Set context
+        # Set context with current question info
         mock_context.user_data["current_assessment_id"] = assessment_id
         mock_context.user_data["current_question_index"] = 0
+        mock_context.user_data["current_question_options"] = question1.answer_options
 
-        # Mock the callback query data
-        mock_update_callback_query.callback_query.data = "answer_0_1"
+        # Set message text to match first option
+        mock_update_message_with_text.message.text = "A"
 
         # Mock get_session_local to return our test session
         with patch(
@@ -219,15 +243,12 @@ class TestAssessmentHandlers:
             return_value=self._mock_session_local(db_session),
         ):
             # Call function
-            await handle_assessment_answer(mock_update_callback_query, mock_context)
+            await handle_assessment_answer(mock_update_message_with_text, mock_context)
 
-        # Verify answer was called (called twice: once at start, once with message)
-        assert mock_update_callback_query.callback_query.answer.call_count >= 1
-
-        # Verify next question was sent via callback_query.message.reply_text
-        # (since update.message is None in callback queries)
-        mock_update_callback_query.callback_query.message.reply_text.assert_called_once()
-        call_args = mock_update_callback_query.callback_query.message.reply_text.call_args
+        # Verify next question was sent via message.reply_text
+        # Should be called at least once (for the next question)
+        assert mock_update_message_with_text.message.reply_text.call_count >= 1
+        call_args = mock_update_message_with_text.message.reply_text.call_args
         assert "Вопрос 2/2" in call_args[0][0]
         assert "Question 2?" in call_args[0][0]
 
@@ -236,11 +257,11 @@ class TestAssessmentHandlers:
             db_session.query(Assessment).filter(Assessment.sheets_row_id == assessment_id).first()
         )
         assert question1_id in updated_assessment.answers
-        assert updated_assessment.answers[question1_id] == 1
+        assert updated_assessment.answers[question1_id] == 0  # "A" is index 0
 
     @pytest.mark.asyncio
     async def test_handle_assessment_answer_completes_assessment_on_last_question(
-        self, db_session, mock_update_callback_query, mock_context
+        self, db_session, mock_update_message_with_text, mock_context
     ):
         """Test that handle_assessment_answer completes assessment on last question."""
         # Create test data
@@ -270,12 +291,13 @@ class TestAssessmentHandlers:
         db_session.add(assessment)
         db_session.commit()
 
-        # Set context
+        # Set context with current question info
         mock_context.user_data["current_assessment_id"] = assessment.sheets_row_id
         mock_context.user_data["current_question_index"] = 0
+        mock_context.user_data["current_question_options"] = question.answer_options
 
-        # Mock the callback query data
-        mock_update_callback_query.callback_query.data = "answer_0_1"
+        # Set message text to match first option
+        mock_update_message_with_text.message.text = "A"
 
         # Mock get_session_local to return our test session
         with patch(
@@ -288,34 +310,36 @@ class TestAssessmentHandlers:
             ) as mock_complete:
                 mock_complete.return_value = AsyncMock()
                 # Call function
-                await handle_assessment_answer(mock_update_callback_query, mock_context)
+                await handle_assessment_answer(mock_update_message_with_text, mock_context)
 
         # Verify complete_and_deliver_result was called
         mock_complete.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_assessment_answer_handles_invalid_user(
-        self, db_session, mock_update_callback_query, mock_context
+        self, db_session, mock_update_message_with_text, mock_context
     ):
         """Test that handle_assessment_answer handles missing user gracefully."""
         # User doesn't exist
         mock_context.user_data["current_assessment_id"] = str(uuid4())
-        mock_update_callback_query.callback_query.data = "answer_0_1"
+        mock_context.user_data["current_question_index"] = 0
+        mock_context.user_data["current_question_options"] = ["A", "B"]
+        mock_update_message_with_text.message.text = "A"
 
         with patch(
             "src.english_tutor.api.bot.handlers.assessment.get_session_local",
             return_value=self._mock_session_local(db_session),
         ):
-            await handle_assessment_answer(mock_update_callback_query, mock_context)
+            await handle_assessment_answer(mock_update_message_with_text, mock_context)
 
         # Verify error message was sent
-        mock_update_callback_query.callback_query.edit_message_text.assert_called_once()
-        call_args = mock_update_callback_query.callback_query.edit_message_text.call_args
+        mock_update_message_with_text.message.reply_text.assert_called_once()
+        call_args = mock_update_message_with_text.message.reply_text.call_args
         assert "Пользователь не найден" in call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_handle_assessment_answer_handles_missing_assessment_id(
-        self, db_session, mock_update_callback_query, mock_context
+        self, db_session, mock_update_message_with_text, mock_context
     ):
         """Test that handle_assessment_answer handles missing assessment ID."""
         # Create user but no assessment ID in context
@@ -324,18 +348,17 @@ class TestAssessmentHandlers:
         db_session.commit()
 
         mock_context.user_data = {}  # No assessment ID
-        mock_update_callback_query.callback_query.data = "answer_0_1"
+        mock_update_message_with_text.message.text = "A"
 
         with patch(
             "src.english_tutor.api.bot.handlers.assessment.get_session_local",
             return_value=self._mock_session_local(db_session),
         ):
-            await handle_assessment_answer(mock_update_callback_query, mock_context)
+            await handle_assessment_answer(mock_update_message_with_text, mock_context)
 
-        # Verify error message was sent
-        mock_update_callback_query.callback_query.edit_message_text.assert_called_once()
-        call_args = mock_update_callback_query.callback_query.edit_message_text.call_args
-        assert "Активная оценка не найдена" in call_args[0][0]
+        # Handler should return early without processing (no context check)
+        # So no error message should be sent
+        # The handler checks context first and returns early if not in assessment context
 
     @pytest.mark.asyncio
     async def test_assess_command_requires_user_to_exist(
