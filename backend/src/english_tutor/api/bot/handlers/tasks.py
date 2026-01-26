@@ -11,10 +11,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 import requests
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import ContextTypes
 
-from src.english_tutor.api.bot.utils import safe_answer_callback_query, safe_edit_message_text
+from src.english_tutor.api.bot.utils import safe_edit_message_text
 from src.english_tutor.config import get_session_local
 from src.english_tutor.models.question import Question
 from src.english_tutor.models.task import Task, TaskType
@@ -27,6 +27,28 @@ from src.english_tutor.utils.exceptions import ContentManagementError, TaskDeliv
 from src.english_tutor.utils.logger import get_logger, log_user_interaction
 
 logger = get_logger(__name__)
+
+
+def _build_reply_keyboard(options: list[str]) -> ReplyKeyboardMarkup:
+    """Build a reply keyboard with answer options, one button per row.
+
+    Args:
+        options: List of answer option strings.
+
+    Returns:
+        ReplyKeyboardMarkup configured for optimal display.
+    """
+    # Always use one button per row for clarity
+    keyboard = [[KeyboardButton(option)] for option in options]
+
+    return ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        input_field_placeholder="Выберите ответ",
+    )
+
+
 task_delivery_service = TaskDeliveryService()
 task_completion_service = TaskCompletionService()
 media_cache_service = MediaCacheService()
@@ -354,7 +376,7 @@ async def send_question(
     question: Question,
     db,
 ) -> None:
-    """Send a question with inline keyboard options.
+    """Send a question with reply keyboard options.
 
     Args:
         update: Telegram update object.
@@ -362,11 +384,13 @@ async def send_question(
         question: Question object.
         db: Database session.
     """
-    keyboard = [
-        [InlineKeyboardButton(option, callback_data=f"task_answer_{question.sheets_row_id}_{i}")]
-        for i, option in enumerate(question.answer_options)
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Create reply keyboard with answer options arranged in a grid
+    reply_markup = _build_reply_keyboard(question.answer_options)
+
+    # Store current question info in context for answer matching
+    user_data = _get_user_data(context)
+    user_data["current_question_id"] = question.sheets_row_id
+    user_data["current_question_options"] = question.answer_options
 
     await update.message.reply_text(
         question.question_text,
@@ -383,30 +407,24 @@ async def send_question(
 
 
 async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle task answer callback query.
+    """Handle task answer from reply keyboard.
 
     Args:
         update: Telegram update object.
         context: Bot context.
     """
-    query = update.callback_query
-    # Answer query safely (may fail silently if expired)
-    await safe_answer_callback_query(query)
+    # Only process text messages (from reply keyboard)
+    if not update.message or not update.message.text:
+        return
+
+    # Check if we're in a task context - return early if not
+    user_data = _get_user_data(context)
+    if not user_data.get("current_task_id") or not user_data.get("current_question_id"):
+        # Not in task context, let other handlers process this
+        return
 
     user_telegram_id = str(update.effective_user.id)
-    # Callback data format: "task_answer_{question_id}_{answer_index}"
-    callback_data = query.data
-    parts = callback_data.split("_")
-    question_id_str = parts[2]  # question_id
-    answer_index = int(parts[3])  # answer_index
-
-    log_user_interaction(
-        logger,
-        user_telegram_id,
-        "task_answer",
-        question_id=question_id_str,
-        answer_index=answer_index,
-    )
+    answer_text = update.message.text.strip()
 
     session_local = get_session_local()
     db = session_local()
@@ -414,30 +432,60 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         user = db.query(User).filter(User.telegram_user_id == user_telegram_id).first()
         if not user:
-            await safe_edit_message_text(
-                query, "Пользователь не найден. Пожалуйста, начните с /start."
+            await update.message.reply_text("Пользователь не найден. Пожалуйста, начните с /start.")
+            return
+
+        task_id_str = user_data.get("current_task_id")
+        if not task_id_str:
+            await update.message.reply_text(
+                "Активное задание не найдено. Введите /task, чтобы получить новое задание."
             )
             return
 
-        user_data = _get_user_data(context)
-        task_id_str = user_data.get("current_task_id")
-        if not task_id_str:
-            await safe_edit_message_text(
-                query, "Активное задание не найдено. Введите /task, чтобы получить новое задание."
+        # Get current question info from context
+        current_question_id = user_data.get("current_question_id")
+        current_question_options = user_data.get("current_question_options", [])
+
+        if not current_question_id or not current_question_options:
+            await update.message.reply_text(
+                "Активный вопрос не найден. Введите /task, чтобы получить новое задание."
             )
             return
+
+        # Find answer index by matching text
+        answer_index = None
+        for i, option in enumerate(current_question_options):
+            if option.strip() == answer_text:
+                answer_index = i
+                break
+
+        if answer_index is None:
+            # Answer doesn't match any option - ignore or show error
+            await update.message.reply_text(
+                "Пожалуйста, выберите один из предложенных вариантов ответа.",
+                reply_markup=_build_reply_keyboard(current_question_options),
+            )
+            return
+
+        log_user_interaction(
+            logger,
+            user_telegram_id,
+            "task_answer",
+            question_id=current_question_id,
+            answer_index=answer_index,
+        )
 
         task = db.query(Task).filter(Task.sheets_row_id == task_id_str).first()
 
         if not task:
-            await safe_edit_message_text(query, "Задание не найдено.")
+            await update.message.reply_text("Задание не найдено.")
             return
 
         # Store answer
         if "task_answers" not in user_data:
             user_data["task_answers"] = {}
 
-        user_data["task_answers"][question_id_str] = answer_index
+        user_data["task_answers"][current_question_id] = answer_index
 
         # Get all questions for this task
         questions = (
@@ -450,43 +498,31 @@ async def handle_task_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Find current question index
         current_question_idx = None
         for idx, q in enumerate(questions):
-            if q.sheets_row_id == question_id_str:
+            if q.sheets_row_id == current_question_id:
                 current_question_idx = idx
                 break
 
         if current_question_idx is None:
-            await query.edit_message_text("Вопрос не найден.")
+            await update.message.reply_text("Вопрос не найден.")
             return
 
         # Check if there are more questions
         if current_question_idx < len(questions) - 1:
             # Send next question
             next_question = questions[current_question_idx + 1]
-            await safe_edit_message_text(
-                query,
-                f"✓ Ответ записан!\n\n{next_question.question_text}",
-                reply_markup=InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton(
-                                option,
-                                callback_data=f"task_answer_{next_question.sheets_row_id}_{i}",
-                            )
-                        ]
-                        for i, option in enumerate(next_question.answer_options)
-                    ]
-                ),
-            )
+            await send_question(update, context, next_question, db)
         else:
             # All questions answered, complete task
+            # Remove keyboard first
+            await update.message.reply_text("✓ Ответ записан!", reply_markup=ReplyKeyboardRemove())
             await complete_task_and_send_feedback(
                 update, context, user.telegram_user_id, task_id_str, db
             )
 
     except (TaskDeliveryError, ValueError, Exception) as e:
         logger.error("Task answer handling error", extra={"error": str(e)})
-        await safe_edit_message_text(
-            query, f"Произошла ошибка: {str(e)}\n\nПожалуйста, попробуйте снова."
+        await update.message.reply_text(
+            f"Произошла ошибка: {str(e)}\n\nПожалуйста, попробуйте снова."
         )
     finally:
         db.close()
@@ -541,10 +577,9 @@ async def complete_task_and_send_feedback(
         if task and task.explanation:
             feedback_message += f"\n\n💡 **Объяснение:**\n{task.explanation}"
 
-        await safe_edit_message_text(
-            update.callback_query,
-            feedback_message,
-            parse_mode="Markdown",
+        # Send feedback message
+        await update.message.reply_text(
+            feedback_message, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove()
         )
 
         # Clear task context
