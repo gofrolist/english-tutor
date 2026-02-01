@@ -21,7 +21,7 @@ class User(Base):
 
     __tablename__ = "users"
 
-    telegram_user_id = Column(String, primary_key=True, nullable=False, index=True)
+    telegram_user_id = Column(String, primary_key=True, nullable=False)
     username = Column(String, nullable=True)
     current_level = Column(
         String,
