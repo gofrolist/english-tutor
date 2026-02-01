@@ -38,7 +38,6 @@ class AssessmentQuestion(Base):
     level = Column(
         String,
         nullable=False,
-        index=True,
         comment="English level this question tests: A1, A2, B1, B2, C1, C2",
     )
     question_text = Column(String, nullable=False)
