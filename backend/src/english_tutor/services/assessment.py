@@ -94,6 +94,76 @@ class AssessmentService:
 
         raise AssessmentError(f"Could not determine level for score: {score}")
 
+    def determine_level_from_questions(
+        self,
+        questions: list[dict[str, Any]],
+        answers: dict[str, Any],
+        score: float,
+    ) -> str:
+        """Determine English level considering which questions were answered.
+
+        For early-stop assessments, we need to consider not just the percentage score,
+        but also the highest level of questions the user answered successfully.
+
+        Args:
+            questions: List of question dicts with 'id', 'level', and 'correct_answer'.
+            answers: Dictionary mapping question IDs to user answers.
+            score: Overall score (0.0 to 1.0).
+
+        Returns:
+            English level (A1, A2, B1, B2, C1, C2).
+        """
+        # Find the highest level where user got at least one question correct
+        highest_correct_level = None
+        level_stats: dict[str, dict[str, int]] = {
+            level: {"total": 0, "correct": 0} for level in LEVELS_ORDER
+        }
+
+        for question in questions:
+            q_id = question["id"]
+            q_level = question.get("level")
+
+            if q_id not in answers:
+                continue
+
+            if q_level and q_level in level_stats:
+                level_stats[q_level]["total"] += 1
+                if answers[q_id] == question["correct_answer"]:
+                    level_stats[q_level]["correct"] += 1
+                    # Track highest level with at least one correct answer
+                    if highest_correct_level is None or LEVELS_ORDER.index(
+                        q_level
+                    ) > LEVELS_ORDER.index(highest_correct_level):
+                        highest_correct_level = q_level
+
+        # If user answered questions from multiple levels, use level-aware logic
+        if highest_correct_level:
+            # User's level is the highest level where they got questions right
+            # But we need to check if they've mastered lower levels first
+            for i, level in enumerate(LEVELS_ORDER):
+                if level not in level_stats or level_stats[level]["total"] == 0:
+                    # Haven't reached this level yet
+                    if i > 0:
+                        # Return the previous level (last one they attempted)
+                        return LEVELS_ORDER[i - 1]
+                    return "A1"
+
+                level_score = level_stats[level]["correct"] / level_stats[level]["total"]
+
+                # If score on this level is < 50%, they haven't mastered it
+                # Assign them to previous level (or A1 if this is the first)
+                if level_score < 0.5:
+                    if i > 0:
+                        return LEVELS_ORDER[i - 1]
+                    return "A1"
+
+                # If this is the highest level they answered, return it
+                if level == highest_correct_level:
+                    return level
+
+        # Fallback to score-based determination
+        return self.determine_level(score)
+
     async def start_assessment(
         self,
         user_id: str,
@@ -275,7 +345,7 @@ class AssessmentService:
             question_ids: List of question sheets_row_id strings
 
         Returns:
-            List of question dictionaries with id (sheets_row_id), correct_answer
+            List of question dictionaries with id (sheets_row_id), level, correct_answer
         """
         questions = (
             db.query(AssessmentQuestion)
@@ -290,6 +360,7 @@ class AssessmentService:
                 "question_text": by_id[qid].question_text,
                 "answer_options": by_id[qid].answer_options,
                 "correct_answer": by_id[qid].correct_answer,
+                "level": by_id[qid].level,
             }
             for qid in question_ids
             if qid in by_id

@@ -688,7 +688,8 @@ async def complete_and_deliver_result(
 
         # Calculate score and determine level
         score = assessment_service.calculate_score(questions, answers)
-        level = assessment_service.determine_level(score)
+        # Use level-aware determination that considers which questions were answered
+        level = assessment_service.determine_level_from_questions(questions, answers, score)
 
         # Complete assessment
         await assessment_service.complete_assessment(
