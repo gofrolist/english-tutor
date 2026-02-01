@@ -247,3 +247,241 @@ class TestShouldOfferEarlyStop:
         for i in range(14):
             answers[f"q{i}"] = 1 if i < 8 else 0  # first 8 wrong, last 6 correct
         assert service.should_offer_early_stop(questions, answers) is False
+
+
+class TestDetermineLevelFromQuestions:
+    """Test suite for determine_level_from_questions (level-aware scoring)."""
+
+    def test_assigns_a1_when_user_masters_only_a1(self):
+        """User gets 88% on A1, 44% on A2 → should get A1 level."""
+        service = AssessmentService()
+        questions = [
+            # A1 questions (9 total)
+            {"id": "q1", "level": "A1", "correct_answer": 0},
+            {"id": "q2", "level": "A1", "correct_answer": 1},
+            {"id": "q3", "level": "A1", "correct_answer": 0},
+            {"id": "q4", "level": "A1", "correct_answer": 1},
+            {"id": "q5", "level": "A1", "correct_answer": 0},
+            {"id": "q6", "level": "A1", "correct_answer": 1},
+            {"id": "q7", "level": "A1", "correct_answer": 0},
+            {"id": "q8", "level": "A1", "correct_answer": 1},
+            {"id": "q9", "level": "A1", "correct_answer": 0},
+            # A2 questions (9 total)
+            {"id": "q10", "level": "A2", "correct_answer": 0},
+            {"id": "q11", "level": "A2", "correct_answer": 1},
+            {"id": "q12", "level": "A2", "correct_answer": 0},
+            {"id": "q13", "level": "A2", "correct_answer": 1},
+            {"id": "q14", "level": "A2", "correct_answer": 0},
+            {"id": "q15", "level": "A2", "correct_answer": 1},
+            {"id": "q16", "level": "A2", "correct_answer": 0},
+            {"id": "q17", "level": "A2", "correct_answer": 1},
+            {"id": "q18", "level": "A2", "correct_answer": 0},
+        ]
+
+        # 8/9 correct on A1 (88.9%), 4/9 correct on A2 (44.4%)
+        answers = {
+            # A1: 8 correct, 1 wrong
+            "q1": 0,
+            "q2": 1,
+            "q3": 0,
+            "q4": 1,
+            "q5": 0,
+            "q6": 1,
+            "q7": 0,
+            "q8": 1,
+            "q9": 1,  # wrong
+            # A2: 4 correct, 5 wrong
+            "q10": 0,
+            "q11": 1,
+            "q12": 1,  # wrong
+            "q13": 1,
+            "q14": 1,  # wrong
+            "q15": 1,
+            "q16": 1,  # wrong
+            "q17": 0,  # wrong
+            "q18": 1,  # wrong
+        }
+
+        score = service.calculate_score(questions, answers)
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        assert level == "A1", "User should get A1 (mastered A1 but struggled with A2)"
+
+    def test_assigns_a2_when_user_masters_a1_and_a2(self):
+        """User gets 80% on A1 and 70% on A2 → should get A2 level."""
+        service = AssessmentService()
+        questions = [{"id": f"a1_{i}", "level": "A1", "correct_answer": 0} for i in range(10)] + [
+            {"id": f"a2_{i}", "level": "A2", "correct_answer": 0} for i in range(10)
+        ]
+
+        # 8/10 on A1 (80%), 7/10 on A2 (70%)
+        answers = {f"a1_{i}": 0 if i < 8 else 1 for i in range(10)}  # 8 correct
+        answers.update({f"a2_{i}": 0 if i < 7 else 1 for i in range(10)})  # 7 correct
+
+        score = service.calculate_score(questions, answers)
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        assert level == "A2", "User should get A2 (mastered both A1 and A2)"
+
+    def test_assigns_b1_when_user_masters_a1_a2_b1(self):
+        """User masters A1, A2, B1 (all >= 50%) → should get B1."""
+        service = AssessmentService()
+        questions = (
+            [{"id": f"a1_{i}", "level": "A1", "correct_answer": 0} for i in range(10)]
+            + [{"id": f"a2_{i}", "level": "A2", "correct_answer": 0} for i in range(10)]
+            + [{"id": f"b1_{i}", "level": "B1", "correct_answer": 0} for i in range(10)]
+        )
+
+        # 60% on each level (mastered)
+        answers = {}
+        for level_prefix in ["a1", "a2", "b1"]:
+            answers.update({f"{level_prefix}_{i}": 0 if i < 6 else 1 for i in range(10)})
+
+        score = service.calculate_score(questions, answers)
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        assert level == "B1", "User should get B1 (highest mastered level)"
+
+    def test_assigns_a1_when_barely_passing_a1(self):
+        """User gets exactly 50% on A1, 40% on A2 → should get A1."""
+        service = AssessmentService()
+        questions = [{"id": f"a1_{i}", "level": "A1", "correct_answer": 0} for i in range(10)] + [
+            {"id": f"a2_{i}", "level": "A2", "correct_answer": 0} for i in range(10)
+        ]
+
+        # Exactly 5/10 on A1 (50%), 4/10 on A2 (40%)
+        answers = {f"a1_{i}": 0 if i < 5 else 1 for i in range(10)}
+        answers.update({f"a2_{i}": 0 if i < 4 else 1 for i in range(10)})
+
+        score = service.calculate_score(questions, answers)
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        assert level == "A1", "User should get A1 (50% is mastery threshold)"
+
+    def test_assigns_a1_when_failing_all_levels(self):
+        """User fails A1 (< 50%) → should still get A1 (minimum level)."""
+        service = AssessmentService()
+        questions = [{"id": f"a1_{i}", "level": "A1", "correct_answer": 0} for i in range(10)]
+
+        # Only 3/10 correct on A1 (30%)
+        answers = {f"a1_{i}": 0 if i < 3 else 1 for i in range(10)}
+
+        score = service.calculate_score(questions, answers)
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        assert level == "A1", "User should get A1 (minimum level, even if struggling)"
+
+    def test_assigns_c2_when_mastering_all_levels(self):
+        """User masters all levels including C2 → should get C2."""
+        service = AssessmentService()
+        questions = []
+        for level in LEVELS_ORDER:
+            questions.extend(
+                [{"id": f"{level}_{i}", "level": level, "correct_answer": 0} for i in range(5)]
+            )
+
+        # 100% on all levels
+        answers = {}
+        for level in LEVELS_ORDER:
+            answers.update({f"{level}_{i}": 0 for i in range(5)})
+
+        score = service.calculate_score(questions, answers)
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        assert level == "C2", "User should get C2 (mastered all levels)"
+
+    def test_stops_at_first_failed_level(self):
+        """User masters A1, A2, fails B1 → should get A2 (last mastered)."""
+        service = AssessmentService()
+        questions = (
+            [{"id": f"a1_{i}", "level": "A1", "correct_answer": 0} for i in range(10)]
+            + [{"id": f"a2_{i}", "level": "A2", "correct_answer": 0} for i in range(10)]
+            + [{"id": f"b1_{i}", "level": "B1", "correct_answer": 0} for i in range(10)]
+        )
+
+        # 80% A1, 70% A2, 30% B1
+        answers = {f"a1_{i}": 0 if i < 8 else 1 for i in range(10)}
+        answers.update({f"a2_{i}": 0 if i < 7 else 1 for i in range(10)})
+        answers.update({f"b1_{i}": 0 if i < 3 else 1 for i in range(10)})
+
+        score = service.calculate_score(questions, answers)
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        assert level == "A2", "User should get A2 (last level before failure)"
+
+    def test_handles_missing_level_field(self):
+        """Questions without level field fall back to score-based determination."""
+        service = AssessmentService()
+        questions = [
+            {"id": "q1", "correct_answer": 0},  # No level field
+            {"id": "q2", "correct_answer": 1},
+        ]
+
+        answers = {"q1": 0, "q2": 1}  # 100% correct
+
+        score = service.calculate_score(questions, answers)
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        # Should fall back to score-based (100% → C2)
+        assert level == "C2", "Should fall back to score-based determination"
+
+    def test_handles_partial_level_data(self):
+        """Some questions with levels, some without → uses available level data."""
+        service = AssessmentService()
+        questions = [
+            {"id": "q1", "level": "A1", "correct_answer": 0},
+            {"id": "q2", "level": "A1", "correct_answer": 0},
+            {"id": "q3", "correct_answer": 0},  # No level
+            {"id": "q4", "level": "A2", "correct_answer": 0},
+            {"id": "q5", "level": "A2", "correct_answer": 0},
+        ]
+
+        # 100% on A1, 0% on A2
+        answers = {"q1": 0, "q2": 0, "q3": 0, "q4": 1, "q5": 1}
+
+        score = service.calculate_score(questions, answers)
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        assert level == "A1", "Should use available level data (A1 mastered, A2 failed)"
+
+    def test_regression_bug_early_stop_b2_assignment(self):
+        """Regression test for the original bug: 18 questions, 66.7% → should be A1, not B2."""
+        service = AssessmentService()
+
+        # Simulate the exact scenario from the bug report
+        questions = []
+        for i in range(9):
+            questions.append({"id": f"assess-{i:03d}", "level": "A1", "correct_answer": 0})
+        for i in range(9, 18):
+            questions.append({"id": f"assess-{i:03d}", "level": "A2", "correct_answer": 0})
+
+        # 8/9 correct on A1 (88.9%), 4/9 correct on A2 (44.4%) = 12/18 total (66.7%)
+        answers = {}
+        for i in range(9):
+            answers[f"assess-{i:03d}"] = 0 if i != 0 else 1  # 8/9 correct
+        for i in range(9, 18):
+            answers[f"assess-{i:03d}"] = 0 if i in [9, 10, 12, 14] else 1  # 4/9 correct
+
+        score = service.calculate_score(questions, answers)
+        assert abs(score - 0.6667) < 0.01, "Score should be ~66.7%"
+
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        # Bug was: 66.7% falls in B2 range (60-80%), so old logic assigned B2
+        # Fix: Level-aware logic sees A1 mastered (88.9%), A2 failed (44.4%), assigns A1
+        assert level == "A1", "User with 88% on A1 and 44% on A2 should get A1, not B2"
+
+    def test_handles_unanswered_questions(self):
+        """Questions that weren't answered are ignored in level determination."""
+        service = AssessmentService()
+        questions = [{"id": f"a1_{i}", "level": "A1", "correct_answer": 0} for i in range(10)] + [
+            {"id": f"a2_{i}", "level": "A2", "correct_answer": 0} for i in range(10)
+        ]
+
+        # Only answer A1 questions (80% correct), don't answer A2
+        answers = {f"a1_{i}": 0 if i < 8 else 1 for i in range(10)}
+
+        score = service.calculate_score(questions, answers)
+        level = service.determine_level_from_questions(questions, answers, score)
+
+        assert level == "A1", "Should only consider answered questions"
