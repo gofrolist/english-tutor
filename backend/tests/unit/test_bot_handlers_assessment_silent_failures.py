@@ -60,7 +60,6 @@ class TestAssessmentHandlerSilentFailures:
             question_text="Test question?",
             answer_options=["Option 1", "Option 2"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-001",
         )
         db_session.add(question)
@@ -123,7 +122,6 @@ class TestAssessmentHandlerSilentFailures:
             question_text="Test question?",
             answer_options=["Option 1", "Option 2"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-001",
         )
         db_session.add(question)
@@ -204,7 +202,6 @@ class TestAssessmentHandlerSilentFailures:
             question_text="Test question 1?",
             answer_options=["Option 1", "Option 2"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-002",
         )
         question2 = AssessmentQuestion(
@@ -212,7 +209,6 @@ class TestAssessmentHandlerSilentFailures:
             question_text="Test question 2?",
             answer_options=["Option 1", "Option 2"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-003",
         )
         db_session.add_all([question1, question2])

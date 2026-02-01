@@ -30,7 +30,6 @@ class QuestionResponse(BaseModel):
     question_text: str
     answer_options: list[str]
     correct_answer: int
-    weight: float
     created_at: datetime
     updated_at: datetime
 
@@ -41,7 +40,6 @@ class QuestionUpdate(BaseModel):
     question_text: Optional[str] = Field(None, description="Question text")
     answer_options: Optional[list[str]] = Field(None, description="List of answer options")
     correct_answer: Optional[int] = Field(None, description="Index of correct answer")
-    weight: Optional[float] = Field(None, description="Weight for scoring")
 
 
 @router.get("/{question_id}", response_model=QuestionResponse)
@@ -126,14 +124,6 @@ def update_question_by_id(
                     detail=f"correct_answer index {question_data.correct_answer} is out of range",
                 )
             question.correct_answer = question_data.correct_answer
-
-        if question_data.weight is not None:
-            if question_data.weight <= 0:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="weight must be positive",
-                )
-            question.weight = question_data.weight
 
         db.commit()
         db.refresh(question)

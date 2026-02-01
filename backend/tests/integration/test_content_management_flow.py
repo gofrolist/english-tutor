@@ -63,7 +63,6 @@ class TestContentManagementFlow:
             "question_text": "What is the past tense of 'go'?",
             "answer_options": ["goed", "went", "gone", "going"],
             "correct_answer": 1,
-            "weight": 1.0,
         }
 
         response = client.post(f"/tasks/{task_id}/questions", json=question1_data)
@@ -77,7 +76,6 @@ class TestContentManagementFlow:
             "question_text": "What is the past tense of 'eat'?",
             "answer_options": ["eated", "ate", "eaten", "eating"],
             "correct_answer": 1,
-            "weight": 1.0,
         }
 
         response = client.post(f"/tasks/{task_id}/questions", json=question2_data)

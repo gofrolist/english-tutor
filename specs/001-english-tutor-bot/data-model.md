@@ -46,7 +46,7 @@ Represents an evaluation session to determine English level.
 - `user_id`: Foreign key to User
 - `questions`: JSON array of question IDs used in assessment
 - `answers`: JSON object mapping question IDs to user answers
-- `score`: Numeric score (calculated from weighted answers)
+- `score`: Numeric score (calculated from correct answers)
 - `resulting_level`: English level determined from assessment (A1, A2, B1, B2, C1, C2)
 - `started_at`: Timestamp when assessment began
 - `completed_at`: Timestamp when assessment was completed (nullable if incomplete)
@@ -113,7 +113,6 @@ Represents an inquiry within a task.
 - `question_text`: The question text
 - `answer_options`: JSON array of answer options (multiple choice)
 - `correct_answer`: Index or value of correct answer
-- `weight`: Numeric weight for scoring (optional, defaults to 1.0)
 - `order`: Display order within task
 - `created_at`: Timestamp when question was created
 - `updated_at`: Timestamp of last update
@@ -128,7 +127,6 @@ Represents an inquiry within a task.
 - `answer_options` must be non-empty array
 - `correct_answer` must be valid index or value within `answer_options`
 - `order` must be positive integer
-- `weight` must be positive number
 
 **Constraints**:
 - Questions explicitly linked to parent task via `task_id`

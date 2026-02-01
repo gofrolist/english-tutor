@@ -53,7 +53,6 @@ The "Questions" sheet must have the following columns (in order):
 | `question_text` | Yes | Question text | `"What is the simple present form of 'to be' for 'I'?"` |
 | `answer_options` | Yes | Answer options (see formats below) | `"am|is|are"` or `["am","is","are"]` |
 | `correct_answer` | Yes | Index of correct answer (0-based) | `0` (first option), `1` (second option) |
-| `weight` | No | Weight for scoring (default: 1.0) | `1.0`, `1.5`, `2.0` |
 | `order` | Yes | Display order within task | `1`, `2`, `3` |
 
 ### Example Questions Row
@@ -64,8 +63,7 @@ B1: task-001
 C1: What is the simple present form of 'to be' for 'I'?
 D1: am,is,are
 E1: 0
-F1: 1.0
-G1: 1
+F1: 1
 ```
 
 ## Answer Options Format
@@ -139,7 +137,6 @@ The "Assessment" sheet must have the following columns (in order):
 | `question_text` | Yes | Question text | `"What is 'hello' in English?"` |
 | `answer_options` | Yes | Answer options (see formats below) | `"hi|hello|goodbye|thanks"` or `["hi","hello","goodbye","thanks"]` |
 | `correct_answer` | Yes | Index of correct answer (0-based) | `0` (first option), `1` (second option) |
-| `weight` | No | Weight for scoring (default: 1.0) | `1.0`, `1.5`, `2.0` |
 
 ### Example Assessment Row
 
@@ -149,17 +146,16 @@ B1: A1
 C1: What is 'hello' in English?
 D1: hi,hello,goodbye,thanks
 E1: 1
-F1: 1.0
-G1: vocabulary
+F1: vocabulary
 ```
 
 ### Assessment Question Selection
 
 When a user runs `/assess`, the system:
-1. Selects 2-3 questions from each level (A1-C2)
-2. Randomizes the order
-3. Presents questions one by one
-4. Calculates score based on weighted answers
+1. Selects all assessment questions from the sheet, ordered by level (A1–C2) then row; content can grow or change at any time (e.g. A1 might have 10 questions, other levels more or fewer)
+2. Presents questions in order by level (easiest to hardest)
+3. If the user struggles (e.g. many wrong in a row or low accuracy in recent answers), offers to stop and assign level from current answers
+4. Calculates score based on correct answers (only answered questions)
 5. Determines user's level based on score thresholds
 
 ### Key Differences from Task Questions

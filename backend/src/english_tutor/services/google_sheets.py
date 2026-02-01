@@ -268,7 +268,6 @@ class GoogleSheetsService:
         - question_text
         - answer_options (comma-separated or JSON array)
         - correct_answer (index, 0-based)
-        - weight (default 1.0)
         - row_id (for tracking updates)
         Questions are ordered by sheets_row_id
 
@@ -282,7 +281,7 @@ class GoogleSheetsService:
             ContentManagementError: If reading from Sheets fails
         """
         try:
-            range_name = f"{sheet_name}!A:F"  # A-F: task_row_id, question_text, answer_options, correct_answer, weight, row_id
+            range_name = f"{sheet_name}!A:E"  # A-E: task_row_id, question_text, answer_options, correct_answer, row_id
             result = (
                 self.service.spreadsheets()
                 .values()
@@ -368,7 +367,6 @@ class GoogleSheetsService:
         question_text = get_cell("question_text")
         answer_options_str = get_cell("answer_options")
         correct_answer_str = get_cell("correct_answer")
-        weight_str = get_cell("weight", "1.0")
 
         # Validate required fields
         if not task_row_id or not question_text or not answer_options_str or not correct_answer_str:
@@ -396,22 +394,11 @@ class GoogleSheetsService:
             logger.warning(f"Row {row_idx}: Invalid correct_answer (must be integer)")
             return None
 
-        # Parse weight
-        try:
-            weight = float(weight_str) if weight_str else 1.0
-            if weight <= 0:
-                logger.warning(f"Row {row_idx}: weight must be positive")
-                return None
-        except ValueError:
-            logger.warning(f"Row {row_idx}: Invalid weight, using default 1.0")
-            weight = 1.0
-
         return {
             "task_row_id": task_row_id,
             "question_text": question_text,
             "answer_options": answer_options,
             "correct_answer": correct_answer,
-            "weight": weight,
             "row_id": get_cell("row_id", str(row_idx)),
         }
 
@@ -486,7 +473,6 @@ class GoogleSheetsService:
         - question_text
         - answer_options (comma-separated or JSON array)
         - correct_answer (index, 0-based)
-        - weight (default 1.0)
         - row_id (for tracking updates)
 
         Args:
@@ -499,7 +485,9 @@ class GoogleSheetsService:
             ContentManagementError: If reading from Sheets fails
         """
         try:
-            range_name = f"{sheet_name}!A:H"  # Adjust range based on columns
+            range_name = (
+                f"{sheet_name}!A:G"  # row_id, level, question_text, answer_options, correct_answer
+            )
             result = (
                 self.service.spreadsheets()
                 .values()
@@ -526,7 +514,6 @@ class GoogleSheetsService:
                 "question_text",
                 "answer_options",
                 "correct_answer",
-                "weight",
             ]
 
             # Map headers to indices
@@ -589,7 +576,6 @@ class GoogleSheetsService:
         question_text = get_cell("question_text")
         answer_options_str = get_cell("answer_options")
         correct_answer_str = get_cell("correct_answer")
-        weight_str = get_cell("weight", "1.0")
         row_id = get_cell("row_id", str(row_idx))
 
         # Validate required fields
@@ -635,27 +621,10 @@ class GoogleSheetsService:
             log_sync(f"ERROR: {error_msg}", level="error")
             return None
 
-        # Parse weight
-        try:
-            weight = float(weight_str) if weight_str else 1.0
-            if weight <= 0:
-                error_msg = (
-                    f"Row {row_idx} (row_id={row_id}): weight must be positive, got {weight}"
-                )
-                logger.warning(error_msg)
-                log_sync(f"ERROR: {error_msg}", level="error")
-                return None
-        except ValueError:
-            logger.warning(
-                f"Row {row_idx} (row_id={row_id}): Invalid weight '{weight_str}', using default 1.0"
-            )
-            weight = 1.0
-
         return {
             "level": level,
             "question_text": question_text,
             "answer_options": answer_options,
             "correct_answer": correct_answer,
-            "weight": weight,
             "row_id": row_id,
         }

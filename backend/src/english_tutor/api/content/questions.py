@@ -27,7 +27,6 @@ class QuestionCreate(BaseModel):
     question_text: str = Field(..., description="Question text")
     answer_options: list[str] = Field(..., description="List of answer options")
     correct_answer: int = Field(..., description="Index of correct answer")
-    weight: float = Field(default=1.0, description="Weight for scoring")
 
 
 class QuestionUpdate(BaseModel):
@@ -36,7 +35,6 @@ class QuestionUpdate(BaseModel):
     question_text: Optional[str] = Field(None, description="Question text")
     answer_options: Optional[list[str]] = Field(None, description="List of answer options")
     correct_answer: Optional[int] = Field(None, description="Index of correct answer")
-    weight: Optional[float] = Field(None, description="Weight for scoring")
 
 
 class QuestionResponse(BaseModel):
@@ -49,7 +47,6 @@ class QuestionResponse(BaseModel):
     question_text: str
     answer_options: list[str]
     correct_answer: int
-    weight: float
     created_at: datetime
     updated_at: datetime
 
@@ -134,20 +131,12 @@ def create_question(
             detail=f"correct_answer index {question_data.correct_answer} is out of range for {len(question_data.answer_options)} options",
         )
 
-    # Validate weight
-    if question_data.weight <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="weight must be positive",
-        )
-
     try:
         question = Question(
             task_id=task_id,
             question_text=question_data.question_text,
             answer_options=question_data.answer_options,
             correct_answer=question_data.correct_answer,
-            weight=question_data.weight,
             sheets_row_id=f"question_{datetime.now().timestamp()}",  # Generate temporary ID
         )
 
@@ -283,14 +272,6 @@ def update_question(
                     detail=f"correct_answer index {question_data.correct_answer} is out of range",
                 )
             question.correct_answer = question_data.correct_answer
-
-        if question_data.weight is not None:
-            if question_data.weight <= 0:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="weight must be positive",
-                )
-            question.weight = question_data.weight
 
         db.commit()
         db.refresh(question)

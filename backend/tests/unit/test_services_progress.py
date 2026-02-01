@@ -270,7 +270,6 @@ class TestProgressService:
             question_text="Q1?",
             answer_options=["A", "B"],
             correct_answer=0,
-            weight=1.0,
         )
         q2 = Question(
             sheets_row_id="q2",
@@ -278,7 +277,6 @@ class TestProgressService:
             question_text="Q2?",
             answer_options=["A", "B"],
             correct_answer=1,
-            weight=1.0,
         )
         db_session.add_all([q1, q2])
         db_session.commit()
@@ -333,7 +331,6 @@ class TestProgressService:
             question_text="Grammar Q?",
             answer_options=["A", "B"],
             correct_answer=0,
-            weight=1.0,
         )
         vq = Question(
             sheets_row_id="vq1",
@@ -341,7 +338,6 @@ class TestProgressService:
             question_text="Vocab Q?",
             answer_options=["A", "B"],
             correct_answer=0,
-            weight=1.0,
         )
         db_session.add_all([gq, vq])
         db_session.commit()
@@ -375,13 +371,14 @@ class TestProgressService:
         assert metrics.skill_accuracy["listening"] is None  # No tasks for this skill
 
     def test_calculate_level_mastery(self, db_session):
-        """Test calculating level mastery with accuracy and volume."""
+        """Test level mastery = correct questions / total questions per level."""
         user = User(telegram_user_id="12345", is_active=True)
         db_session.add(user)
 
-        # Create 5 different tasks to avoid unique constraint
+        # Create 2 tasks with 5 questions each (10 questions total at A1)
+        # 8 correct, 2 wrong = 80%
         tasks = []
-        for i in range(5):
+        for i in range(2):
             task = Task(
                 sheets_row_id=f"task-{i:03d}",
                 level="A1",
@@ -394,33 +391,46 @@ class TestProgressService:
         db_session.add_all(tasks)
         db_session.commit()
 
-        # Create 5 progress records with 80% accuracy each (using different tasks)
-        for i in range(5):
+        for i, task in enumerate(tasks):
+            questions = []
+            for j in range(5):
+                q = Question(
+                    sheets_row_id=f"task-{i:03d}-q{j}",
+                    task_id=task.sheets_row_id,
+                    question_text=f"Q{j}?",
+                    answer_options=["A", "B"],
+                    correct_answer=0,
+                )
+                questions.append(q)
+            db_session.add_all(questions)
+
+            # 4 correct, 1 wrong per task (80%)
+            answers = {
+                q.sheets_row_id: (0 if j < 4 else 1)  # correct_answer=0, wrong=1
+                for j, q in enumerate(questions)
+            }
             progress = Progress(
                 user_id=user.telegram_user_id,
-                task_id=tasks[i].sheets_row_id,
-                answers={},
+                task_id=task.sheets_row_id,
+                answers=answers,
                 score=8.0,
                 percentage_correct=80.0,
                 completed_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=i),
             )
             db_session.add(progress)
-
         db_session.commit()
 
         service = ProgressService()
         metrics = service.calculate_progress(user.telegram_user_id, db_session)
 
-        # With 5 tasks at 80% accuracy, volume factor = 1.0 (5/5)
-        # Mastery = 80.0 * 1.0 = 80.0
+        # 8 correct out of 10 questions = 80%
         assert metrics.level_mastery["A1"] == 80.0
 
-    def test_calculate_level_mastery_with_volume_factor(self, db_session):
-        """Test that level mastery is reduced when task count is below threshold."""
+    def test_calculate_level_mastery_all_correct_shows_100(self, db_session):
+        """Test that level mastery shows 100% when all questions answered correctly."""
         user = User(telegram_user_id="12345", is_active=True)
         db_session.add(user)
 
-        # Create 2 different tasks to avoid unique constraint
         task1 = Task(
             sheets_row_id="task-001",
             level="A1",
@@ -440,32 +450,155 @@ class TestProgressService:
         db_session.add_all([task1, task2])
         db_session.commit()
 
-        # Create only 2 progress records (below threshold of 5)
-        progress1 = Progress(
-            user_id=user.telegram_user_id,
-            task_id=task1.sheets_row_id,
-            answers={},
-            score=10.0,
-            percentage_correct=100.0,  # Perfect accuracy
-            completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
-        )
-        progress2 = Progress(
-            user_id=user.telegram_user_id,
-            task_id=task2.sheets_row_id,
-            answers={},
-            score=10.0,
-            percentage_correct=100.0,  # Perfect accuracy
-            completed_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
-        )
-        db_session.add_all([progress1, progress2])
+        for i, task in enumerate([task1, task2]):
+            questions = [
+                Question(
+                    sheets_row_id=f"task-{i + 1:03d}-q{j}",
+                    task_id=task.sheets_row_id,
+                    question_text=f"Q{j}?",
+                    answer_options=["A", "B"],
+                    correct_answer=0,
+                )
+                for j in range(3)
+            ]
+            db_session.add_all(questions)
+            answers = {q.sheets_row_id: 0 for q in questions}  # all correct
+            progress = Progress(
+                user_id=user.telegram_user_id,
+                task_id=task.sheets_row_id,
+                answers=answers,
+                score=10.0,
+                percentage_correct=100.0,
+                completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            )
+            db_session.add(progress)
         db_session.commit()
 
         service = ProgressService()
         metrics = service.calculate_progress(user.telegram_user_id, db_session)
 
-        # With 2 tasks at 100% accuracy, volume factor = 0.4 (2/5)
-        # Mastery = 100.0 * 0.4 = 40.0
-        assert metrics.level_mastery["A1"] == 40.0
+        # 6 correct out of 6 questions = 100%
+        assert metrics.level_mastery["A1"] == 100.0
+
+    def test_calculate_level_mastery_mixed_correct_wrong(self, db_session):
+        """Test level mastery with some questions correct, some wrong."""
+        user = User(telegram_user_id="12345", is_active=True)
+        db_session.add(user)
+
+        task1 = Task(
+            sheets_row_id="task-001",
+            level="A1",
+            type=TaskType.TEXT.value,
+            title="Task 1",
+            content_text="Content 1",
+            status=TaskStatus.PUBLISHED.value,
+        )
+        task2 = Task(
+            sheets_row_id="task-002",
+            level="A1",
+            type=TaskType.TEXT.value,
+            title="Task 2",
+            content_text="Content 2",
+            status=TaskStatus.PUBLISHED.value,
+        )
+        db_session.add_all([task1, task2])
+        db_session.commit()
+
+        # Task1: 4 questions, all correct (4/4)
+        q1_list = [
+            Question(
+                sheets_row_id="task-001-q0",
+                task_id=task1.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+            Question(
+                sheets_row_id="task-001-q1",
+                task_id=task1.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+            Question(
+                sheets_row_id="task-001-q2",
+                task_id=task1.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+            Question(
+                sheets_row_id="task-001-q3",
+                task_id=task1.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+        ]
+        db_session.add_all(q1_list)
+        progress1 = Progress(
+            user_id=user.telegram_user_id,
+            task_id=task1.sheets_row_id,
+            answers={q.sheets_row_id: 0 for q in q1_list},
+            score=10.0,
+            percentage_correct=100.0,
+            completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        db_session.add(progress1)
+
+        # Task2: 4 questions, 1 correct, 3 wrong (1/4)
+        q2_list = [
+            Question(
+                sheets_row_id="task-002-q0",
+                task_id=task2.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+            Question(
+                sheets_row_id="task-002-q1",
+                task_id=task2.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+            Question(
+                sheets_row_id="task-002-q2",
+                task_id=task2.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+            Question(
+                sheets_row_id="task-002-q3",
+                task_id=task2.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+        ]
+        db_session.add_all(q2_list)
+        progress2 = Progress(
+            user_id=user.telegram_user_id,
+            task_id=task2.sheets_row_id,
+            answers={
+                q2_list[0].sheets_row_id: 0,  # correct
+                q2_list[1].sheets_row_id: 1,  # wrong
+                q2_list[2].sheets_row_id: 1,  # wrong
+                q2_list[3].sheets_row_id: 1,  # wrong
+            },
+            score=2.5,
+            percentage_correct=25.0,
+            completed_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
+        )
+        db_session.add(progress2)
+        db_session.commit()
+
+        service = ProgressService()
+        metrics = service.calculate_progress(user.telegram_user_id, db_session)
+
+        # 5 correct out of 8 questions = 62.5%
+        assert metrics.level_mastery["A1"] == 62.5
 
     def test_calculate_progress_multiple_levels(self, db_session):
         """Test progress calculation across multiple CEFR levels."""
@@ -491,32 +624,88 @@ class TestProgressService:
         db_session.add_all([a1_task, b1_task])
         db_session.commit()
 
+        a1_questions = [
+            Question(
+                sheets_row_id="a1-q0",
+                task_id=a1_task.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+        ]
+        db_session.add_all(a1_questions)
         a1_progress = Progress(
             user_id=user.telegram_user_id,
             task_id=a1_task.sheets_row_id,
-            answers={},
+            answers={q.sheets_row_id: 0 for q in a1_questions},
             score=10.0,
             percentage_correct=100.0,
             completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
+        db_session.add(a1_progress)
+
+        b1_questions = [
+            Question(
+                sheets_row_id="b1-q0",
+                task_id=b1_task.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+            Question(
+                sheets_row_id="b1-q1",
+                task_id=b1_task.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+            Question(
+                sheets_row_id="b1-q2",
+                task_id=b1_task.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+            Question(
+                sheets_row_id="b1-q3",
+                task_id=b1_task.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+            Question(
+                sheets_row_id="b1-q4",
+                task_id=b1_task.sheets_row_id,
+                question_text="Q?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+            ),
+        ]
+        db_session.add_all(b1_questions)
         b1_progress = Progress(
             user_id=user.telegram_user_id,
             task_id=b1_task.sheets_row_id,
-            answers={},
+            answers={
+                b1_questions[0].sheets_row_id: 0,
+                b1_questions[1].sheets_row_id: 0,
+                b1_questions[2].sheets_row_id: 0,
+                b1_questions[3].sheets_row_id: 0,
+                b1_questions[4].sheets_row_id: 1,  # wrong
+            },
             score=8.0,
             percentage_correct=80.0,
             completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
-        db_session.add_all([a1_progress, b1_progress])
+        db_session.add(b1_progress)
         db_session.commit()
 
         service = ProgressService()
         metrics = service.calculate_progress(user.telegram_user_id, db_session)
 
-        # A1: 1 task at 100%, volume factor = 0.2, mastery = 20.0
-        assert metrics.level_mastery["A1"] == 20.0
-        # B1: 1 task at 80%, volume factor = 0.2, mastery = 16.0
-        assert metrics.level_mastery["B1"] == 16.0
+        # A1: 1 correct out of 1 question = 100%
+        assert metrics.level_mastery["A1"] == 100.0
+        # B1: 4 correct out of 5 questions = 80%
+        assert metrics.level_mastery["B1"] == 80.0
         # Other levels should be None
         assert metrics.level_mastery["A2"] is None
         assert metrics.level_mastery["B2"] is None
@@ -543,7 +732,6 @@ class TestProgressService:
             question_text="Q?",
             answer_options=["A", "B"],
             correct_answer=0,
-            weight=1.0,
         )
         db_session.add(q)
         db_session.commit()

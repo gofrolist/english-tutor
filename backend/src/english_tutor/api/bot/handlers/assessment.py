@@ -20,7 +20,8 @@ from src.english_tutor.config import get_session_local
 from src.english_tutor.models.assessment import Assessment, AssessmentStatus
 from src.english_tutor.models.assessment_question import AssessmentQuestion
 from src.english_tutor.models.user import User
-from src.english_tutor.services.assessment import AssessmentService
+from src.english_tutor.services.assessment import LEVELS_ORDER, AssessmentService
+from src.english_tutor.services.task_delivery import TaskDeliveryService
 from src.english_tutor.utils.logger import get_logger, log_quiz_submission, log_user_interaction
 
 logger = get_logger(__name__)
@@ -47,6 +48,7 @@ def _build_reply_keyboard(options: list[str]) -> ReplyKeyboardMarkup:
 
 
 assessment_service = AssessmentService()
+task_delivery_service = TaskDeliveryService()
 
 
 def _get_user_data(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
@@ -138,11 +140,34 @@ async def assess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 },
             )
 
+        # If user completed all tasks correctly, start assessment from next level
+        start_from_level: str | None = None
+        if user.current_level:
+            try:
+                if task_delivery_service.all_tasks_completed_correctly(user.telegram_user_id, db):
+                    level_idx = LEVELS_ORDER.index(user.current_level)
+                    if level_idx < len(LEVELS_ORDER) - 1:
+                        start_from_level = LEVELS_ORDER[level_idx + 1]
+                        logger.info(
+                            "Starting assessment from next level (user completed all tasks)",
+                            extra={
+                                "user_id": user.telegram_user_id,
+                                "current_level": user.current_level,
+                                "start_from_level": start_from_level,
+                            },
+                        )
+            except Exception as e:
+                logger.warning(
+                    "Could not check all_tasks_completed, using default assessment",
+                    extra={"error": str(e)},
+                )
+
         # Start new assessment (questions will be selected automatically)
         assessment = await assessment_service.start_assessment(
             user.telegram_user_id,
             db,
             question_ids=None,  # None triggers automatic selection
+            start_from_level=start_from_level,
         )
 
         # Store assessment ID in context for answer collection
@@ -233,6 +258,60 @@ async def handle_assessment_ready(
 
         # Send first question
         await send_assessment_question(update, context, assessment_id_str, db)
+    finally:
+        db.close()
+
+
+async def handle_assessment_early_stop(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Handle early-stop choice: continue assessment or assign level from current answers.
+
+    Callback data format: assessment_early_stop|{assessment_id}|continue or |assign.
+    """
+    query = update.callback_query
+    await safe_answer_callback_query(query)
+
+    user_telegram_id = str(update.effective_user.id)
+    log_user_interaction(logger, user_telegram_id, "assessment_early_stop")
+
+    callback_data = query.data
+    if not callback_data or not callback_data.startswith("assessment_early_stop|"):
+        await safe_edit_message_text(query, "Неверный формат данных.")
+        return
+
+    parts = callback_data.split("|")
+    if len(parts) != 3:
+        await safe_edit_message_text(query, "Неверный формат данных.")
+        return
+
+    _, assessment_id_str, choice = parts
+    if choice not in ("continue", "assign"):
+        await safe_edit_message_text(query, "Неверный выбор.")
+        return
+
+    session_local = get_session_local()
+    db = session_local()
+
+    try:
+        assessment = (
+            db.query(Assessment).filter(Assessment.sheets_row_id == assessment_id_str).first()
+        )
+        if not assessment or assessment.status != AssessmentStatus.IN_PROGRESS:
+            await safe_edit_message_text(query, "Оценка не найдена или уже завершена.")
+            return
+
+        user_data = _get_user_data(context)
+        user_data.pop("assessment_waiting_early_stop_choice", None)
+
+        if choice == "continue":
+            await safe_edit_message_text(query, "Продолжаем! Следующий вопрос:")
+            await send_assessment_question(update, context, assessment_id_str, db)
+        else:
+            # Assign current level from answers so far
+            await safe_edit_message_text(query, "Определяем уровень по твоим ответам...")
+            await complete_and_deliver_result(update, context, assessment_id_str, db)
     finally:
         db.close()
 
@@ -369,6 +448,13 @@ async def handle_assessment_answer(
         # Not in assessment context, let other handlers process this
         return
 
+    # If we're waiting for early-stop choice, only accept callback; ignore text
+    if user_data.get("assessment_waiting_early_stop_choice"):
+        await update.message.reply_text(
+            "Пожалуйста, выбери одну из кнопок выше: «Продолжить» или «Определить уровень сейчас»."
+        )
+        return
+
     user_telegram_id = str(update.effective_user.id)
     answer_text = update.message.text.strip()
 
@@ -500,13 +586,40 @@ async def handle_assessment_answer(
             raise
 
         # Update context
-        user_data["current_question_index"] = current_question_index + 1
+        next_index = current_question_index + 1
+        user_data["current_question_index"] = next_index
 
         # Check if more questions remain
-        if current_question_index + 1 < len(question_ids):
+        if next_index < len(question_ids):
+            # Check if user is struggling and offer early stop (continue or assign current level)
+            questions_for_scoring = assessment_service.get_assessment_questions(db, question_ids)
+            if assessment_service.should_offer_early_stop(questions_for_scoring, updated_answers):
+                # Remove keyboard and offer choice
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "Продолжить",
+                            callback_data=f"assessment_early_stop|{assessment_id_str}|continue",
+                        ),
+                        InlineKeyboardButton(
+                            "Определить уровень сейчас",
+                            callback_data=f"assessment_early_stop|{assessment_id_str}|assign",
+                        ),
+                    ]
+                ]
+                await update.message.reply_text(
+                    "Похоже, вопросы стали сложнее. Хочешь продолжить или определить уровень по текущим ответам?",
+                    reply_markup=ReplyKeyboardRemove(),
+                )
+                await update.message.reply_text(
+                    "Выбери:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                user_data["assessment_waiting_early_stop_choice"] = assessment_id_str
+                return
+
             # Send motivational messages at specific milestones
-            # current_question_index is 0-indexed, so question_number = current_question_index + 1
-            question_number = current_question_index + 1
+            question_number = next_index  # 1-indexed
             await send_motivational_message(update, question_number)
 
             await send_assessment_question(update, context, assessment_id_str, db)
@@ -610,8 +723,10 @@ async def complete_and_deliver_result(
             await message.reply_text(result_message, reply_markup=ReplyKeyboardRemove())
 
         # Clear assessment from context
-        context.user_data.pop("current_assessment_id", None)
-        context.user_data.pop("current_question_index", None)
+        user_data = _get_user_data(context)
+        user_data.pop("current_assessment_id", None)
+        user_data.pop("current_question_index", None)
+        user_data.pop("assessment_waiting_early_stop_choice", None)
 
         if user is not None:
             log_quiz_submission(

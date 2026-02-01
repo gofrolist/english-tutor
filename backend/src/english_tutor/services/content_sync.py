@@ -532,7 +532,6 @@ class ContentSyncService:
             question_text=question_data["question_text"],
             answer_options=question_data["answer_options"],
             correct_answer=question_data["correct_answer"],
-            weight=question_data.get("weight", 1.0),
             sheets_row_id=row_id,
         )
         db.add(question)
@@ -556,9 +555,6 @@ class ContentSyncService:
             return True
         if question.correct_answer != question_data["correct_answer"]:
             return True
-        # Float comparison with tolerance
-        if abs(question.weight - question_data.get("weight", 1.0)) > 0.0001:
-            return True
         return False
 
     def _update_question(
@@ -574,7 +570,6 @@ class ContentSyncService:
         question.question_text = question_data["question_text"]
         question.answer_options = question_data["answer_options"]
         question.correct_answer = question_data["correct_answer"]
-        question.weight = question_data.get("weight", 1.0)
         question.sheets_row_id = row_id
         question.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -664,7 +659,6 @@ class ContentSyncService:
             question_text=question_data["question_text"],
             answer_options=question_data["answer_options"],
             correct_answer=question_data["correct_answer"],
-            weight=question_data.get("weight", 1.0),
             sheets_row_id=row_id,
         )
         db.add(question)
@@ -699,9 +693,6 @@ class ContentSyncService:
             return True
         if question.correct_answer != question_data["correct_answer"]:
             return True
-        # Float comparison with tolerance
-        if abs(question.weight - question_data.get("weight", 1.0)) > 0.0001:
-            return True
 
         return False
 
@@ -722,6 +713,5 @@ class ContentSyncService:
         question.question_text = question_data["question_text"]
         question.answer_options = question_data["answer_options"]
         question.correct_answer = question_data["correct_answer"]
-        question.weight = question_data.get("weight", 1.0)
         question.sheets_row_id = row_id
         question.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)

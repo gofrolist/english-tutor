@@ -103,7 +103,7 @@
 ### Implementation for User Story 2
 
 - [X] T034 [P] [US2] Create Task model in backend/src/models/task.py with level, type, title, content fields, status
-- [X] T035 [P] [US2] Create Question model in backend/src/models/question.py with task_id, question_text, answer_options, correct_answer, weight, order fields
+- [X] T035 [P] [US2] Create Question model in backend/src/models/question.py with task_id, question_text, answer_options, correct_answer, order fields
 - [X] T036 [P] [US2] Create Progress model in backend/src/models/progress.py with user_id, task_id, answers, score, percentage_correct fields
 - [X] T037 [US2] Create database migration for Task, Question, and Progress tables in backend/alembic/versions/
 - [X] T038 [US2] Implement task delivery service in backend/src/services/task_delivery.py (query by level, select task, deliver content)

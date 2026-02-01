@@ -146,11 +146,55 @@ class TestTaskDeliveryService:
         selected_task = service.select_task_for_user(user.telegram_user_id, db_session)
 
         assert selected_task is not None
-        assert selected_task.level in ["A2", "B1", "B2"]
+        # B1 user gets tasks from A1 through B1 (all levels up to current)
+        assert selected_task.level in ["A1", "A2", "B1"]
         assert selected_task.status == "published"
 
+    def test_select_task_for_user_includes_tasks_with_wrong_answers(self, db_session):
+        """Test that tasks answered incorrectly remain available for retry."""
+        user = User(telegram_user_id="user_wrong", current_level="B1", is_active=True)
+        db_session.add(user)
+        db_session.commit()
+
+        task1 = Task(
+            sheets_row_id="task_1",
+            level="B1",
+            type="text",
+            title="Task 1",
+            content_text="Content 1",
+            status="published",
+        )
+        task2 = Task(
+            sheets_row_id="task_2",
+            level="B1",
+            type="text",
+            title="Task 2",
+            content_text="Content 2",
+            status="published",
+        )
+        db_session.add_all([task1, task2])
+        db_session.commit()
+
+        # Mark task1 as completed with wrong answers (50%)
+        progress = Progress(
+            user_id=user.telegram_user_id,
+            task_id=task1.sheets_row_id,
+            answers={},
+            score=5.0,
+            percentage_correct=50.0,
+        )
+        db_session.add(progress)
+        db_session.commit()
+
+        service = TaskDeliveryService()
+        selected_task = service.select_task_for_user(user.telegram_user_id, db_session)
+
+        # task1 should still be available (wrong answers); task2 also available
+        assert selected_task is not None
+        assert selected_task.sheets_row_id in (task1.sheets_row_id, task2.sheets_row_id)
+
     def test_select_task_for_user_excludes_completed(self, db_session):
-        """Test that completed tasks are excluded from selection."""
+        """Test that correctly completed tasks (100%) are excluded from selection."""
         user = User(telegram_user_id="22222", current_level="B1", is_active=True)
         db_session.add(user)
         db_session.commit()
@@ -226,6 +270,112 @@ class TestTaskDeliveryService:
 
         # Should return None since all tasks are completed
         assert selected_task is None
+
+    def test_all_tasks_completed_correctly_true(self, db_session):
+        """Test all_tasks_completed_correctly returns True when all tasks done with 100%."""
+        user = User(telegram_user_id="user_all_done", current_level="B1", is_active=True)
+        db_session.add(user)
+        db_session.commit()
+
+        task1 = Task(
+            sheets_row_id="task_1",
+            level="B1",
+            type="text",
+            title="Task 1",
+            content_text="Content 1",
+            status="published",
+        )
+        db_session.add(task1)
+        db_session.commit()
+
+        progress = Progress(
+            user_id=user.telegram_user_id,
+            task_id=task1.sheets_row_id,
+            answers={},
+            score=10.0,
+            percentage_correct=100.0,
+        )
+        db_session.add(progress)
+        db_session.commit()
+
+        service = TaskDeliveryService()
+        assert service.all_tasks_completed_correctly(user.telegram_user_id, db_session) is True
+
+    def test_all_tasks_completed_correctly_false_when_wrong_answer(self, db_session):
+        """Test all_tasks_completed_correctly returns False when some task has wrong answers."""
+        user = User(telegram_user_id="user_partial", current_level="B1", is_active=True)
+        db_session.add(user)
+        db_session.commit()
+
+        task1 = Task(
+            sheets_row_id="task_1",
+            level="B1",
+            type="text",
+            title="Task 1",
+            content_text="Content 1",
+            status="published",
+        )
+        db_session.add(task1)
+        db_session.commit()
+
+        progress = Progress(
+            user_id=user.telegram_user_id,
+            task_id=task1.sheets_row_id,
+            answers={},
+            score=5.0,
+            percentage_correct=50.0,
+        )
+        db_session.add(progress)
+        db_session.commit()
+
+        service = TaskDeliveryService()
+        assert service.all_tasks_completed_correctly(user.telegram_user_id, db_session) is False
+
+    def test_get_tasks_for_user_levels_includes_previous_levels(self, db_session):
+        """Test that B1 user gets tasks from A1, A2, B1 (all levels up to current)."""
+        task_a1 = Task(
+            sheets_row_id="task_a1",
+            level="A1",
+            type="text",
+            title="A1 Task",
+            content_text="A1 content",
+            status="published",
+        )
+        task_a2 = Task(
+            sheets_row_id="task_a2",
+            level="A2",
+            type="text",
+            title="A2 Task",
+            content_text="A2 content",
+            status="published",
+        )
+        task_b1 = Task(
+            sheets_row_id="task_b1",
+            level="B1",
+            type="text",
+            title="B1 Task",
+            content_text="B1 content",
+            status="published",
+        )
+        task_b2 = Task(
+            sheets_row_id="task_b2",
+            level="B2",
+            type="text",
+            title="B2 Task",
+            content_text="B2 content",
+            status="published",
+        )
+        db_session.add_all([task_a1, task_a2, task_b1, task_b2])
+        db_session.commit()
+
+        service = TaskDeliveryService()
+        tasks = service.get_tasks_for_user_levels("B1", db_session)
+
+        task_levels = [t.level for t in tasks]
+        assert "A1" in task_levels
+        assert "A2" in task_levels
+        assert "B1" in task_levels
+        assert "B2" not in task_levels
 
     def test_get_tasks_by_level_invalid_level(self, db_session):
         """Test that invalid level raises error."""

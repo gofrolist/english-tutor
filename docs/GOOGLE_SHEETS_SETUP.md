@@ -40,7 +40,6 @@ Create a sheet named "Questions" with the following columns:
 | question_text | Yes | Question text | "What is the past simple of 'go'?" |
 | answer_options | Yes | Comma-separated or JSON array | "goed,went,gone" or ["goed","went","gone"] |
 | correct_answer | Yes | Index of correct answer (0-based) | 1 |
-| weight | No | Weight for scoring (default: 1.0) | 1.5 |
 | order | Yes | Display order within task | 1 |
 | row_id | No | Unique row identifier (auto-generated if not provided) | question-001 |
 

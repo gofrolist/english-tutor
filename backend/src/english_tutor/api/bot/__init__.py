@@ -10,8 +10,9 @@ bot_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bot_module)
 
 # Re-export public functions
+get_bot_application = bot_module.get_bot_application
+handle_text_message = bot_module.handle_text_message
+remove_webhook = bot_module.remove_webhook
+setup_webhook = bot_module.setup_webhook
 start_bot = bot_module.start_bot
 stop_bot = bot_module.stop_bot
-get_bot_application = bot_module.get_bot_application
-setup_webhook = bot_module.setup_webhook
-remove_webhook = bot_module.remove_webhook

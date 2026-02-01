@@ -36,9 +36,9 @@ class TestAssessmentFlow:
 
         # Step 3: User answers questions
         questions = [
-            {"id": "q1", "weight": 1.0, "correct_answer": 0},
-            {"id": "q2", "weight": 1.0, "correct_answer": 1},
-            {"id": "q3", "weight": 1.0, "correct_answer": 2},
+            {"id": "q1", "correct_answer": 0},
+            {"id": "q2", "correct_answer": 1},
+            {"id": "q3", "correct_answer": 2},
         ]
 
         answers = {

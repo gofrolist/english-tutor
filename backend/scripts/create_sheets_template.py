@@ -174,7 +174,6 @@ def create_template_sheet(
         "question_text",
         "answer_options",
         "correct_answer",
-        "weight",
         "order",
     ]
 
@@ -185,7 +184,6 @@ def create_template_sheet(
             "What is the simple present form of 'to be' for 'I'?",
             "am|is|are",
             "0",
-            "1.0",
             "1",
         ],
         [
@@ -194,7 +192,6 @@ def create_template_sheet(
             "Which sentence is correct?",
             "I am student,I is student,I are student",
             "0",
-            "1.0",
             "2",
         ],
     ]
@@ -302,7 +299,6 @@ def create_template_sheet(
         "question_text",
         "answer_options",
         "correct_answer",
-        "weight",
     ]
 
     assessment_example = [
@@ -312,7 +308,6 @@ def create_template_sheet(
             "What is 'hello' in English?",
             "hi|hello|goodbye|thanks",
             "1",
-            "1.0",
         ],
         [
             "assess-002",
@@ -320,7 +315,6 @@ def create_template_sheet(
             "I ___ a student.",
             "am,is,are,be",
             "0",
-            "1.0",
         ],
         [
             "assess-003",
@@ -328,7 +322,6 @@ def create_template_sheet(
             "She ___ to work every day.",
             "go,goes,going,went",
             "1",
-            "1.0",
         ],
         [
             "assess-004",
@@ -336,7 +329,6 @@ def create_template_sheet(
             "Choose the correct past tense: Yesterday I ___ to the store.",
             "go,went,gone,going",
             "1",
-            "1.5",
         ],
     ]
 

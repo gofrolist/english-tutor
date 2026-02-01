@@ -27,9 +27,6 @@ VALID_DOMAINS = [
 # Valid CEFR levels
 VALID_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
 
-# Minimum tasks threshold for level mastery calculation
-MIN_TASKS_FOR_MASTERY = 5
-
 
 class ProgressMetrics:
     """Container for progress metrics."""
@@ -86,7 +83,7 @@ class ProgressService:
         self._calculate_quality_metrics(progress_records, task_map, db, metrics)
 
         # Calculate level mastery
-        self._calculate_level_mastery(progress_records, task_map, metrics)
+        self._calculate_level_mastery(progress_records, task_map, db, metrics)
 
         return metrics
 
@@ -217,37 +214,44 @@ class ProgressService:
         self,
         progress_records: list[Progress],
         task_map: dict[str, Task],
+        db: Session,
         metrics: ProgressMetrics,
     ) -> None:
-        """Calculate level mastery for each CEFR level.
+        """Calculate level mastery: (questions answered correctly / total questions) per level.
+
+        Counts all questions in attempted tasks at each level and how many were
+        answered correctly.
 
         Args:
             progress_records: List of progress records
             task_map: Dictionary mapping task_id to Task objects
+            db: Database session for querying questions
             metrics: ProgressMetrics object to update
         """
-        # Group progress by level
-        level_progress: dict[str, list[Progress]] = defaultdict(list)
+        level_correct: dict[str, int] = defaultdict(int)
+        level_total: dict[str, int] = defaultdict(int)
 
         for progress in progress_records:
             task = task_map.get(progress.task_id)
-            if task and task.level in VALID_LEVELS:
-                level_progress[task.level].append(progress)
-
-        # Calculate mastery for each level
-        for level in VALID_LEVELS:
-            level_records = level_progress.get(level, [])
-            if not level_records:
+            if not task or task.level not in VALID_LEVELS:
                 continue
 
-            # Calculate average accuracy for this level
-            total_accuracy = sum(p.percentage_correct for p in level_records)
-            avg_accuracy = total_accuracy / len(level_records)
+            questions = db.query(Question).filter(Question.task_id == task.sheets_row_id).all()
+            if not questions:
+                continue
 
-            # Calculate volume factor (based on number of tasks completed)
-            task_count = len(level_records)
-            volume_factor = min(1.0, task_count / MIN_TASKS_FOR_MASTERY)
+            for question in questions:
+                question_id_str = question.sheets_row_id
+                if question_id_str not in progress.answers:
+                    continue
+                level_total[task.level] += 1
+                user_answer = progress.answers[question_id_str]
+                if user_answer == question.correct_answer:
+                    level_correct[task.level] += 1
 
-            # Mastery = average accuracy * volume factor
-            # This ensures users need both high accuracy AND sufficient volume
-            metrics.level_mastery[level] = avg_accuracy * volume_factor
+        for level in VALID_LEVELS:
+            total = level_total.get(level, 0)
+            if total == 0:
+                continue
+            correct = level_correct.get(level, 0)
+            metrics.level_mastery[level] = (correct / total) * 100.0
