@@ -83,18 +83,16 @@
 
 ### Assessment Quiz Scoring Algorithm
 
-**Decision**: Use weighted scoring with level thresholds
+**Decision**: Use score from correct answers with level thresholds
 
 **Rationale**:
-- Questions weighted by difficulty/importance
 - Score thresholds map to CEFR levels (A1, A2, B1, B2, C1, C2)
 - Simple algorithm aligns with YAGNI principle
 - Can be refined later based on user performance data
 - Transparent scoring approach suitable for educational context
 
 **Implementation Approach**:
-- Each assessment question has difficulty weight
-- Total score calculated from weighted correct answers
+- Total score calculated from correct answers (fraction correct)
 - Predefined score ranges for each CEFR level
 - Level assigned based on score range
 

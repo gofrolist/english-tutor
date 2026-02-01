@@ -17,6 +17,7 @@ from telegram.ext import (
 from src.english_tutor.api.bot.handlers.assessment import (
     assess_command,
     handle_assessment_answer,
+    handle_assessment_early_stop,
     handle_assessment_ready,
 )
 from src.english_tutor.api.bot.handlers.progress import progress_command
@@ -55,14 +56,15 @@ def get_bot_application() -> Application:
         bot_application.add_handler(
             CallbackQueryHandler(handle_assessment_ready, pattern="^start_assessment_ready\\|")
         )
-        # Message handlers for answers (must come before general message handlers)
-        # These handle text messages from reply keyboards during tasks/assessments
         bot_application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_assessment_answer)
+            CallbackQueryHandler(handle_assessment_early_stop, pattern="^assessment_early_stop\\|")
         )
+        # Message handlers for answers (must come before general message handlers)
+        # Single handler dispatches to task or assessment based on context. Order matters:
+        # the first handler to receive an update consumes it, so we must route explicitly.
         bot_application.add_handler(CommandHandler("task", task_command))
         bot_application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_task_answer)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
         )
 
         # Register error handler
@@ -120,6 +122,26 @@ async def stop_bot() -> None:
         await bot_application.stop()
         await bot_application.shutdown()
         logger.info("Telegram bot stopped")
+
+
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Route text messages to task or assessment handler based on user context.
+
+    In PTB, the first handler to receive an update consumes it. We must explicitly
+    dispatch so both task answers and assessment answers are processed correctly.
+    """
+    user_data = context.user_data or {}
+    in_assessment = (
+        user_data.get("current_assessment_id") is not None
+        and user_data.get("current_question_index") is not None
+        and not user_data.get("assessment_waiting_early_stop_choice")
+    )
+    in_task = bool(user_data.get("current_task_id") and user_data.get("current_question_id"))
+
+    if in_assessment:
+        await handle_assessment_answer(update, context)
+    elif in_task:
+        await handle_task_answer(update, context)
 
 
 async def handle_error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

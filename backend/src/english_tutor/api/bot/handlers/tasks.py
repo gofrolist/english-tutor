@@ -207,14 +207,22 @@ async def task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
 
-        # Select task for user
+        # Select task for user (excludes only correctly completed tasks)
         task = task_delivery_service.select_task_for_user(user.telegram_user_id, db)
 
         if not task:
-            await update.message.reply_text(
-                "Извините, сейчас нет заданий для вашего уровня.\n\n"
-                "Попробуйте позже или введите /assess, чтобы пройти оценку заново."
-            )
+            # Check if all tasks are completed correctly → suggest Assessment for next level
+            if task_delivery_service.all_tasks_completed_correctly(user.telegram_user_id, db):
+                await update.message.reply_text(
+                    "🎉 Поздравляем! Вы выполнили все задания для вашего уровня правильно!\n\n"
+                    "Пройдите оценку снова, чтобы перейти на следующий уровень.\n"
+                    "Введите /assess — вопросы начнутся с уровня выше вашего текущего."
+                )
+            else:
+                await update.message.reply_text(
+                    "Извините, сейчас нет заданий для вашего уровня.\n\n"
+                    "Попробуйте позже или введите /assess, чтобы пройти оценку заново."
+                )
             return
 
         # Store task ID in context for answer collection
@@ -560,9 +568,7 @@ async def complete_task_and_send_feedback(
         score_emoji = "🎉" if percentage >= 80 else "👍" if percentage >= 60 else "📚"
 
         feedback_message = (
-            f"{score_emoji} **Задание выполнено!**\n\n"
-            f"Ваш результат: **{percentage:.1f}%**\n"
-            f"Заработано баллов: **{progress.score:.1f}**\n\n"
+            f"{score_emoji} **Задание выполнено!**\n\nВаш результат: **{percentage:.1f}%**\n\n"
         )
 
         if percentage >= 80:

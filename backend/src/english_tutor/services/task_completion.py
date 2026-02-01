@@ -61,21 +61,19 @@ class TaskCompletionService:
             logger.error("No questions found for task", extra={"task_id": task_id})
             raise TaskDeliveryError(f"No questions found for task: {task_id}")
 
-        # Calculate score
-        total_weight = 0.0
-        correct_weight = 0.0
+        # Calculate score (count of correct answers; percentage of answered questions)
+        total_answered = 0
+        correct_count = 0
 
         for question in questions:
             question_id_str = question.sheets_row_id
-            total_weight += question.weight
-
             if question_id_str in answers:
-                user_answer = answers[question_id_str]
-                if user_answer == question.correct_answer:
-                    correct_weight += question.weight
+                total_answered += 1
+                if answers[question_id_str] == question.correct_answer:
+                    correct_count += 1
 
-        score = correct_weight
-        percentage_correct = (correct_weight / total_weight * 100.0) if total_weight > 0 else 0.0
+        score = float(correct_count)
+        percentage_correct = (correct_count / total_answered * 100.0) if total_answered > 0 else 0.0
 
         # Check for existing progress
         existing_progress = (

@@ -9,7 +9,6 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
-    Float,
     Index,
     Integer,
     String,
@@ -47,13 +46,11 @@ class AssessmentQuestion(Base):
     correct_answer = Column(
         Integer, nullable=False, comment="Index of correct answer in answer_options"
     )
-    weight = Column(Float, nullable=False, default=1.0, comment="Weight for scoring")
     created_at = Column(DateTime, default=_utcnow_naive, nullable=False)
     updated_at = Column(DateTime, default=_utcnow_naive, onupdate=_utcnow_naive, nullable=False)
 
     __table_args__ = (
         CheckConstraint("level IN ('A1', 'A2', 'B1', 'B2', 'C1', 'C2')", name="check_valid_level"),
-        CheckConstraint("weight > 0", name="check_weight_positive"),
         Index("idx_assessment_question_level", "level"),
     )
 

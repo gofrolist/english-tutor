@@ -14,11 +14,14 @@ from telegram import User as TelegramUser
 from src.english_tutor.api.bot.handlers.assessment import (
     assess_command,
     handle_assessment_answer,
+    handle_assessment_early_stop,
     handle_assessment_ready,
     send_assessment_question,
 )
 from src.english_tutor.models.assessment import Assessment, AssessmentStatus
 from src.english_tutor.models.assessment_question import AssessmentQuestion
+from src.english_tutor.models.progress import Progress
+from src.english_tutor.models.task import Task
 from src.english_tutor.models.user import User
 
 
@@ -99,7 +102,6 @@ class TestAssessmentHandlers:
             question_text="Test question?",
             answer_options=["Option 1", "Option 2"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-001",
         )
         db_session.add(question)
@@ -150,7 +152,6 @@ class TestAssessmentHandlers:
             question_text="Test question?",
             answer_options=["Option 1", "Option 2"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-002",
         )
         db_session.add(question)
@@ -200,7 +201,6 @@ class TestAssessmentHandlers:
             question_text="Question 1?",
             answer_options=["A", "B"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-003",
         )
         question2 = AssessmentQuestion(
@@ -208,7 +208,6 @@ class TestAssessmentHandlers:
             question_text="Question 2?",
             answer_options=["C", "D"],
             correct_answer=1,
-            weight=1.0,
             sheets_row_id="test-row-004",
         )
         db_session.add_all([question1, question2])
@@ -274,7 +273,6 @@ class TestAssessmentHandlers:
             question_text="Question 1?",
             answer_options=["A", "B"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-005",
         )
         db_session.add(question)
@@ -411,7 +409,6 @@ class TestAssessmentHandlers:
             question_text="Test?",
             answer_options=["A", "B"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-001",  # Required for question selection
         )
         db_session.add(question)
@@ -465,7 +462,6 @@ class TestAssessmentHandlers:
             question_text="Test?",
             answer_options=["A", "B"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-006",
         )
         db_session.add(question)
@@ -481,6 +477,71 @@ class TestAssessmentHandlers:
 
         # Verify assessment was started (message was sent)
         assert mock_update_message.message.reply_text.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_assess_command_starts_from_next_level_when_all_tasks_completed(
+        self, db_session, mock_update_message, mock_context
+    ):
+        """Test that assess_command passes start_from_level when user completed all tasks."""
+        # User A1 who has completed all tasks correctly
+        user = User(
+            telegram_user_id="12345",
+            current_level="A1",
+            is_active=True,
+        )
+        db_session.add(user)
+        db_session.commit()
+
+        # Task at A1 level, completed with 100%
+        task = Task(
+            sheets_row_id="task_a1_1",
+            level="A1",
+            type="text",
+            title="A1 Task",
+            content_text="Content",
+            status="published",
+        )
+        db_session.add(task)
+        db_session.commit()
+
+        progress = Progress(
+            user_id=user.telegram_user_id,
+            task_id=task.sheets_row_id,
+            answers={},
+            score=10.0,
+            percentage_correct=100.0,
+        )
+        db_session.add(progress)
+        db_session.commit()
+
+        # A2 question for assessment (start_from_level=A2 will select from A2 onward)
+        question = AssessmentQuestion(
+            level="A2",
+            question_text="Test?",
+            answer_options=["A", "B"],
+            correct_answer=0,
+            sheets_row_id="assess-a2-01",
+        )
+        db_session.add(question)
+        db_session.commit()
+
+        with patch(
+            "src.english_tutor.api.bot.handlers.assessment.get_session_local",
+            return_value=self._mock_session_local(db_session),
+        ):
+            with patch(
+                "src.english_tutor.api.bot.handlers.assessment.assessment_service.start_assessment"
+            ) as mock_start:
+                mock_assessment = MagicMock()
+                mock_assessment.sheets_row_id = "new_assessment_1"
+                mock_assessment.questions = [question.sheets_row_id]
+                mock_start.return_value = AsyncMock(return_value=mock_assessment)
+
+                await assess_command(mock_update_message, mock_context)
+
+                mock_start.assert_called_once()
+                call_kwargs = mock_start.call_args[1]
+                assert call_kwargs.get("start_from_level") == "A2"
 
     @pytest.mark.asyncio
     async def test_send_assessment_question_completes_when_all_answered(
@@ -533,7 +594,6 @@ class TestAssessmentHandlers:
             question_text="Test question?",
             answer_options=["Option 1", "Option 2"],
             correct_answer=0,
-            weight=1.0,
             sheets_row_id="test-row-007",
         )
         db_session.add(question)
@@ -632,3 +692,180 @@ class TestAssessmentHandlers:
         mock_update_callback_query.callback_query.edit_message_text.assert_called_once()
         call_args = mock_update_callback_query.callback_query.edit_message_text.call_args
         assert "Оценка не найдена" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_handle_assessment_answer_shows_early_stop_when_struggling(
+        self, db_session, mock_update_message_with_text, mock_context
+    ):
+        """Test that when user is struggling we show early-stop prompt and inline keyboard."""
+        user = User(telegram_user_id="12345", is_active=True)
+        db_session.add(user)
+        db_session.commit()
+
+        # 15 questions so we have enough for early-stop check (12+ answered)
+        questions = []
+        for i in range(15):
+            q = AssessmentQuestion(
+                level="A1",
+                question_text=f"Question {i + 1}?",
+                answer_options=["A", "B"],
+                correct_answer=0,
+                sheets_row_id=f"test-row-early-{i}",
+            )
+            db_session.add(q)
+            questions.append(q)
+        db_session.commit()
+
+        assessment = Assessment(
+            sheets_row_id="assessment_early",
+            user_id=user.telegram_user_id,
+            questions=[q.sheets_row_id for q in questions],
+            answers={},
+            score=0.0,
+            status=AssessmentStatus.IN_PROGRESS,
+        )
+        db_session.add(assessment)
+        db_session.commit()
+
+        # Answer question 0-7 correct, 8-11 wrong (last 4 wrong → early stop)
+        answers = {questions[i].sheets_row_id: (0 if i < 8 else 1) for i in range(12)}
+        assessment.answers = answers
+        db_session.commit()
+
+        assessment_id = assessment.sheets_row_id
+        mock_context.user_data["current_assessment_id"] = assessment_id
+        mock_context.user_data["current_question_index"] = 11
+        mock_context.user_data["current_question_options"] = ["A", "B"]
+        mock_update_message_with_text.message.text = "B"  # wrong for question 11 (correct=0)
+
+        with patch(
+            "src.english_tutor.api.bot.handlers.assessment.get_session_local",
+            return_value=self._mock_session_local(db_session),
+        ):
+            # Force early-stop so we verify handler shows prompt and keyboard
+            with patch(
+                "src.english_tutor.api.bot.handlers.assessment.assessment_service"
+            ) as mock_svc:
+                mock_svc.should_offer_early_stop.return_value = True
+                mock_svc.get_assessment_questions.return_value = [
+                    {"id": f"test-row-early-{i}", "correct_answer": 0} for i in range(15)
+                ]
+                await handle_assessment_answer(mock_update_message_with_text, mock_context)
+
+        # Should show early-stop message and inline keyboard (not next question)
+        calls = mock_update_message_with_text.message.reply_text.call_args_list
+        texts = [c[0][0] for c in calls]
+        assert any("сложнее" in t or "уровень по текущим" in t for t in texts)
+        # Second message is "Выбери:" with inline keyboard
+        assert any("Выбери" in t for t in texts)
+        # At least one call should have reply_markup (inline keyboard for early-stop choice)
+        keyboard_calls = [c for c in calls if c[1].get("reply_markup")]
+        assert len(keyboard_calls) >= 1
+        assert mock_context.user_data.get("assessment_waiting_early_stop_choice") == assessment_id
+
+    @pytest.mark.asyncio
+    async def test_handle_assessment_early_stop_continue_sends_next_question(
+        self, db_session, mock_update_callback_query, mock_context
+    ):
+        """Test that early-stop callback 'continue' sends next question."""
+        user = User(telegram_user_id="12345", is_active=True)
+        db_session.add(user)
+        db_session.commit()
+
+        q1 = AssessmentQuestion(
+            level="A1",
+            question_text="Q1?",
+            answer_options=["A", "B"],
+            correct_answer=0,
+            sheets_row_id="early-q1",
+        )
+        q2 = AssessmentQuestion(
+            level="A1",
+            question_text="Q2?",
+            answer_options=["C", "D"],
+            correct_answer=1,
+            sheets_row_id="early-q2",
+        )
+        db_session.add_all([q1, q2])
+        db_session.commit()
+
+        assessment = Assessment(
+            sheets_row_id="assessment_early_2",
+            user_id=user.telegram_user_id,
+            questions=[q1.sheets_row_id, q2.sheets_row_id],
+            answers={q1.sheets_row_id: 0},
+            score=0.0,
+            status=AssessmentStatus.IN_PROGRESS,
+        )
+        db_session.add(assessment)
+        db_session.commit()
+
+        mock_update_callback_query.callback_query.data = (
+            f"assessment_early_stop|{assessment.sheets_row_id}|continue"
+        )
+        mock_context.user_data["current_assessment_id"] = assessment.sheets_row_id
+        mock_context.user_data["current_question_index"] = 1
+        mock_context.user_data["assessment_waiting_early_stop_choice"] = assessment.sheets_row_id
+
+        with patch(
+            "src.english_tutor.api.bot.handlers.assessment.get_session_local",
+            return_value=self._mock_session_local(db_session),
+        ):
+            with patch(
+                "src.english_tutor.api.bot.handlers.assessment.send_assessment_question"
+            ) as mock_send:
+                mock_send.return_value = AsyncMock()
+                await handle_assessment_early_stop(mock_update_callback_query, mock_context)
+
+        mock_send.assert_called_once()
+        assert mock_context.user_data.get("assessment_waiting_early_stop_choice") is None
+
+    @pytest.mark.asyncio
+    async def test_handle_assessment_early_stop_assign_completes_assessment(
+        self, db_session, mock_update_callback_query, mock_context
+    ):
+        """Test that early-stop callback 'assign' completes assessment with current level."""
+        user = User(telegram_user_id="12345", is_active=True)
+        db_session.add(user)
+        db_session.commit()
+
+        q = AssessmentQuestion(
+            level="A1",
+            question_text="Q?",
+            answer_options=["A", "B"],
+            correct_answer=0,
+            sheets_row_id="early-q-only",
+        )
+        db_session.add(q)
+        db_session.commit()
+
+        assessment = Assessment(
+            sheets_row_id="assessment_early_3",
+            user_id=user.telegram_user_id,
+            questions=[q.sheets_row_id],
+            answers={q.sheets_row_id: 0},
+            score=0.0,
+            status=AssessmentStatus.IN_PROGRESS,
+        )
+        db_session.add(assessment)
+        db_session.commit()
+
+        mock_update_callback_query.callback_query.data = (
+            f"assessment_early_stop|{assessment.sheets_row_id}|assign"
+        )
+        mock_context.user_data["current_assessment_id"] = assessment.sheets_row_id
+        mock_context.user_data["current_question_index"] = 1
+        mock_context.user_data["assessment_waiting_early_stop_choice"] = assessment.sheets_row_id
+
+        with patch(
+            "src.english_tutor.api.bot.handlers.assessment.get_session_local",
+            return_value=self._mock_session_local(db_session),
+        ):
+            with patch(
+                "src.english_tutor.api.bot.handlers.assessment.complete_and_deliver_result"
+            ) as mock_complete:
+                mock_complete.return_value = AsyncMock()
+                await handle_assessment_early_stop(mock_update_callback_query, mock_context)
+
+        mock_complete.assert_called_once()
+        assert mock_context.user_data.get("assessment_waiting_early_stop_choice") is None

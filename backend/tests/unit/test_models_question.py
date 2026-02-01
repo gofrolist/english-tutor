@@ -38,35 +38,8 @@ class TestQuestionModel:
         assert question.question_text == "What is the past tense of 'go'?"
         assert question.answer_options == ["goed", "went", "gone", "going"]
         assert question.correct_answer == 1
-        assert question.weight == 1.0  # default weight
         assert question.created_at is not None
         assert question.updated_at is not None
-
-    def test_question_weight_custom(self, db_session):
-        """Test creating a question with custom weight."""
-        task = Task(
-            sheets_row_id="task_2",
-            level="B1",
-            type="text",
-            title="Test Task",
-            content_text="Test content",
-            status="published",
-        )
-        db_session.add(task)
-        db_session.commit()
-
-        question = Question(
-            sheets_row_id="question_2",
-            task_id=task.sheets_row_id,
-            question_text="Important question",
-            answer_options=["A", "B"],
-            correct_answer=0,
-            weight=2.5,
-        )
-        db_session.add(question)
-        db_session.commit()
-
-        assert question.weight == 2.5
 
     def test_question_correct_answer_validation(self, db_session):
         """Test that correct_answer must be valid index."""

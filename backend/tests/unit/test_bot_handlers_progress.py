@@ -115,7 +115,6 @@ class TestProgressHandler:
             question_text="Q?",
             answer_options=["A", "B"],
             correct_answer=0,
-            weight=1.0,
         )
         db_session.add(q)
         db_session.commit()

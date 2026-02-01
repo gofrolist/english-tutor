@@ -154,7 +154,7 @@ This will automatically:
 **Google Sheets Format:**
 See `backend/docs/SHEETS_FORMAT.md` for detailed format requirements. The template includes:
 - **Tasks sheet**: Columns for level, type, title, content, explanation, difficulty, status, row_id
-- **Questions sheet**: Columns for task_row_id, question_text, answer_options, correct_answer, weight, order, row_id
+- **Questions sheet**: Columns for task_row_id, question_text, answer_options, correct_answer, order, row_id
 
 **Option 2: Manual Setup**
 

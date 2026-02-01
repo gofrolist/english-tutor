@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from src.english_tutor.models.assessment import Assessment  # noqa: F401
+from src.english_tutor.models.assessment_question import AssessmentQuestion  # noqa: F401
 
 # Import all models to ensure relationships are registered
 from src.english_tutor.models.base import Base

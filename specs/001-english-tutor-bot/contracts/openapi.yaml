@@ -512,11 +512,6 @@ components:
         correct_answer:
           type: integer
           description: Index of correct answer in answer_options array
-        weight:
-          type: number
-          nullable: true
-          default: 1.0
-          description: Weight for scoring calculations
         order:
           type: integer
           description: Display order within task
@@ -539,10 +534,6 @@ components:
         correct_answer:
           type: integer
           description: Index of correct answer (0-based)
-        weight:
-          type: number
-          nullable: true
-          default: 1.0
         order:
           type: integer
           minimum: 0
@@ -559,9 +550,6 @@ components:
           minItems: 2
         correct_answer:
           type: integer
-        weight:
-          type: number
-          nullable: true
         order:
           type: integer
           minimum: 0

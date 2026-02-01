@@ -20,12 +20,15 @@ logger = get_logger(__name__)
 # Level ordering for filtering (adjacent levels)
 LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"]
 
+# Minimum percentage to consider a task "completed correctly" (excluded from available)
+CORRECTLY_COMPLETED_THRESHOLD = 99.5
+
 
 class TaskDeliveryService:
     """Service for task delivery operations."""
 
     def get_tasks_by_level(self, level: str, db: Session) -> list[Task]:
-        """Get tasks filtered by user level.
+        """Get tasks filtered by user level (current ± 1).
 
         Returns tasks at the user's level and one level above/below.
 
@@ -64,6 +67,44 @@ class TaskDeliveryService:
 
         logger.info(
             "Tasks retrieved by level",
+            extra={"level": level, "valid_levels": valid_levels, "count": len(tasks)},
+        )
+
+        return tasks
+
+    def get_tasks_for_user_levels(self, level: str, db: Session) -> list[Task]:
+        """Get all tasks from A1 through current level (inclusive).
+
+        Includes all levels up to and including user's current level so they
+        can complete any unfinished tasks from previous levels.
+
+        Args:
+            level: User's English proficiency level (A1-C2)
+            db: Database session
+
+        Returns:
+            List of Task objects from A1 through level
+        """
+        if level not in LEVEL_ORDER:
+            logger.error("Invalid level requested", extra={"level": level})
+            raise TaskDeliveryError(f"Invalid level: {level}")
+
+        level_idx = LEVEL_ORDER.index(level)
+        valid_levels = LEVEL_ORDER[: level_idx + 1]
+
+        tasks = (
+            db.query(Task)
+            .filter(
+                and_(
+                    Task.level.in_(valid_levels),
+                    Task.status == TaskStatus.PUBLISHED.value,
+                )
+            )
+            .all()
+        )
+
+        logger.info(
+            "Tasks retrieved for user levels (A1 through current)",
             extra={"level": level, "valid_levels": valid_levels, "count": len(tasks)},
         )
 
@@ -115,11 +156,59 @@ class TaskDeliveryService:
 
         return tasks
 
+    def _get_correctly_completed_task_ids(self, user_id: str, db: Session) -> set[str]:
+        """Get task IDs where user answered correctly (percentage >= threshold).
+
+        Args:
+            user_id: User telegram_user_id
+            db: Database session
+
+        Returns:
+            Set of task sheets_row_ids that user completed with correct answers
+        """
+        rows = (
+            db.query(Progress.task_id)
+            .filter(
+                Progress.user_id == user_id,
+                Progress.percentage_correct >= CORRECTLY_COMPLETED_THRESHOLD,
+            )
+            .all()
+        )
+        return {row[0] for row in rows}
+
+    def all_tasks_completed_correctly(self, user_id: str, db: Session) -> bool:
+        """Check if user has completed all tasks for their level with correct answers.
+
+        Args:
+            user_id: User telegram_user_id
+            db: Database session
+
+        Returns:
+            True if all tasks for user's level (and adjacent levels) are completed correctly
+
+        Raises:
+            TaskDeliveryError: If user not found or has no level
+        """
+        user = db.query(User).filter(User.telegram_user_id == user_id).first()
+        if not user:
+            raise TaskDeliveryError(f"User not found: {user_id}")
+        if not user.current_level:
+            return False
+
+        tasks = self.get_tasks_for_user_levels(user.current_level, db)
+        if not tasks:
+            return False
+
+        correctly_completed = self._get_correctly_completed_task_ids(user_id, db)
+        task_ids = {t.sheets_row_id for t in tasks}
+        return task_ids.issubset(correctly_completed)
+
     def select_task_for_user(self, user_id: str, db: Session) -> Optional[Task]:
         """Select a task for a user based on their level.
 
         Selects a random published task appropriate for the user's level,
-        excluding tasks that the user has already completed.
+        excluding only tasks that the user has answered correctly (100%).
+        Tasks with wrong answers or not yet attempted remain available.
 
         Args:
             user_id: User telegram_user_id
@@ -140,24 +229,23 @@ class TaskDeliveryService:
             logger.error("User has no level assigned", extra={"user_id": user_id})
             raise TaskDeliveryError(f"User has no level assigned: {user_id}")
 
-        tasks = self.get_tasks_by_level(user.current_level, db)
+        tasks = self.get_tasks_for_user_levels(user.current_level, db)
 
         if not tasks:
             logger.warning("No tasks available for user level", extra={"level": user.current_level})
             return None
 
-        # Get IDs of tasks the user has already completed
-        completed_task_ids = {
-            row[0] for row in db.query(Progress.task_id).filter(Progress.user_id == user_id).all()
-        }
+        # Get IDs of tasks the user has completed correctly (exclude these only)
+        correctly_completed_task_ids = self._get_correctly_completed_task_ids(user_id, db)
 
-        # Filter out completed tasks
-        available_tasks = [task for task in tasks if task.sheets_row_id not in completed_task_ids]
+        # Filter out only correctly completed tasks; wrong answers and new tasks stay available
+        available_tasks = [
+            task for task in tasks if task.sheets_row_id not in correctly_completed_task_ids
+        ]
 
-        # If all tasks are completed, return None
         if not available_tasks:
             logger.info(
-                "All tasks completed for user level",
+                "All tasks completed correctly for user level",
                 extra={"user_id": user_id, "level": user.current_level},
             )
             return None
