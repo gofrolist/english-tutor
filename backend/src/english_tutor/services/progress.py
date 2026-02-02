@@ -217,19 +217,20 @@ class ProgressService:
         db: Session,
         metrics: ProgressMetrics,
     ) -> None:
-        """Calculate level mastery: (questions answered correctly / total questions) per level.
+        """Calculate level mastery: (questions correct / total questions in catalog) per level.
 
-        Counts all questions in attempted tasks at each level and how many were
-        answered correctly.
-
-        Args:
-            progress_records: List of progress records
-            task_map: Dictionary mapping task_id to Task objects
-            db: Database session for querying questions
-            metrics: ProgressMetrics object to update
+        Mastery is the fraction of all published questions at that level the user
+        has answered correctly (denominator = catalog total, not attempted only).
         """
+        catalog_per_level: dict[str, int] = {}
+        for lvl in VALID_LEVELS:
+            catalog_per_level[lvl] = (
+                db.query(Question)
+                .join(Task, Question.task_id == Task.sheets_row_id)
+                .filter(Task.level == lvl, Task.status == "published")
+                .count()
+            )
         level_correct: dict[str, int] = defaultdict(int)
-        level_total: dict[str, int] = defaultdict(int)
 
         for progress in progress_records:
             task = task_map.get(progress.task_id)
@@ -244,14 +245,14 @@ class ProgressService:
                 question_id_str = question.sheets_row_id
                 if question_id_str not in progress.answers:
                     continue
-                level_total[task.level] += 1
                 user_answer = progress.answers[question_id_str]
                 if user_answer == question.correct_answer:
                     level_correct[task.level] += 1
 
         for level in VALID_LEVELS:
-            total = level_total.get(level, 0)
-            if total == 0:
+            catalog_total = catalog_per_level.get(level, 0)
+            if catalog_total == 0:
                 continue
             correct = level_correct.get(level, 0)
-            metrics.level_mastery[level] = (correct / total) * 100.0
+            mastery_pct = (correct / catalog_total) * 100.0
+            metrics.level_mastery[level] = mastery_pct
