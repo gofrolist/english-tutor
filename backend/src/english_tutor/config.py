@@ -18,6 +18,7 @@ from sqlalchemy.orm.session import Session
 
 from src.english_tutor.utils.logger import setup_logging
 
+
 @dataclass(frozen=True)
 class Settings:
     """Application settings loaded from environment variables."""
