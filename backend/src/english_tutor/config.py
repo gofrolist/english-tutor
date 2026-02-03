@@ -5,6 +5,8 @@ logging setup, and application settings.
 """
 
 import os
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -16,19 +18,49 @@ from sqlalchemy.orm.session import Session
 
 from src.english_tutor.utils.logger import setup_logging
 
-# Load environment variables from .env file
-# Look for .env file in the backend directory (parent of src)
-env_path = Path(__file__).parent.parent.parent / ".env"
-load_dotenv(dotenv_path=env_path, override=False)
 
-# Database configuration (Supabase PostgreSQL)
-# Supabase connection string format:
-# postgresql://postgres:[PASSWORD]@[PROJECT_REF].supabase.co:5432/postgres
-# Or with connection pooler:
-# postgresql://postgres:[PASSWORD]@[PROJECT_REF].supabase.co:6543/postgres?pgbouncer=true
-DATABASE_URL: str = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:password@localhost:5432/postgres"
-)
+@dataclass(frozen=True)
+class Settings:
+    """Application settings loaded from environment variables."""
+
+    database_url: str
+    sql_echo: bool
+    telegram_bot_token: str
+    api_host: str
+    api_port: int
+    debug: bool
+    telegram_webhook_url: Optional[str]
+    media_cache_dir: str
+
+    @classmethod
+    def load(cls) -> "Settings":
+        """Load settings from environment variables and .env file."""
+        env_path = Path(__file__).parent.parent.parent / ".env"
+        load_dotenv(dotenv_path=env_path, override=False)
+
+        return cls(
+            database_url=os.getenv(
+                "DATABASE_URL", "postgresql://postgres:password@localhost:5432/postgres"
+            ),
+            sql_echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+            telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+            api_host=os.getenv("API_HOST", "0.0.0.0"),
+            api_port=int(os.getenv("API_PORT", "8080")),
+            debug=os.getenv("DEBUG", "false").lower() == "true",
+            telegram_webhook_url=os.getenv("TELEGRAM_WEBHOOK_URL") or None,
+            media_cache_dir=os.getenv("MEDIA_CACHE_DIR", "/app/data/media_cache"),
+        )
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Return cached application settings."""
+    settings = Settings.load()
+    log_level = "DEBUG" if settings.debug else "INFO"
+    setup_logging(log_level=log_level)
+    return settings
+
+
 db_engine: Optional[Engine] = None
 SessionLocal: Optional[sessionmaker[Session]] = None
 
@@ -41,10 +73,11 @@ def get_database_engine() -> Engine:
     """
     global db_engine
     if db_engine is None:
+        settings = get_settings()
         db_engine = create_engine(
-            DATABASE_URL,
+            settings.database_url,
             pool_pre_ping=True,
-            echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+            echo=settings.sql_echo,
         )
     return db_engine
 
@@ -62,11 +95,6 @@ def get_session_local() -> sessionmaker[Session]:
     return SessionLocal
 
 
-# Telegram Bot configuration
-# Token is loaded but validation is deferred to when it's actually needed
-TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-
-
 def get_telegram_bot_token() -> str:
     """Get Telegram bot token with validation.
 
@@ -76,26 +104,7 @@ def get_telegram_bot_token() -> str:
     Raises:
         ValueError: If token is not set
     """
-    if not TELEGRAM_BOT_TOKEN:
+    token = get_settings().telegram_bot_token
+    if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required but not set")
-    return TELEGRAM_BOT_TOKEN
-
-
-# Application configuration
-API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
-API_PORT: int = int(os.getenv("API_PORT", "8080"))
-DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
-
-# Telegram Webhook configuration
-# Set this to your public URL (e.g., https://your-app.fly.dev)
-# If not set, webhook mode will be disabled
-TELEGRAM_WEBHOOK_URL: Optional[str] = os.getenv("TELEGRAM_WEBHOOK_URL")
-
-# Media cache configuration
-# Directory for caching audio/video files from Google Drive
-# Default: /app/data/media_cache (Fly.io persistent volume)
-MEDIA_CACHE_DIR: str = os.getenv("MEDIA_CACHE_DIR", "/app/data/media_cache")
-
-# Initialize logging based on DEBUG setting
-log_level = "DEBUG" if DEBUG else "INFO"
-setup_logging(log_level=log_level)
+    return token

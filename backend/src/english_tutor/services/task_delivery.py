@@ -6,7 +6,7 @@ Service for delivering learning tasks to users based on their proficiency level.
 import random
 from typing import Optional
 
-from sqlalchemy import and_
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from src.english_tutor.models.progress import Progress
@@ -27,6 +27,28 @@ CORRECTLY_COMPLETED_THRESHOLD = 99.5
 class TaskDeliveryService:
     """Service for task delivery operations."""
 
+    def _validate_level(self, level: str) -> None:
+        if level not in LEVEL_ORDER:
+            logger.error("Invalid level requested", extra={"level": level})
+            raise TaskDeliveryError(f"Invalid level: {level}")
+
+    def _get_adjacent_levels(self, level: str) -> list[str]:
+        """Return current level plus adjacent levels (within bounds)."""
+        self._validate_level(level)
+        level_idx = LEVEL_ORDER.index(level)
+        valid_levels = [LEVEL_ORDER[level_idx]]
+        if level_idx > 0:
+            valid_levels.append(LEVEL_ORDER[level_idx - 1])
+        if level_idx < len(LEVEL_ORDER) - 1:
+            valid_levels.append(LEVEL_ORDER[level_idx + 1])
+        return valid_levels
+
+    def _get_levels_upto(self, level: str) -> list[str]:
+        """Return levels from A1 through the provided level (inclusive)."""
+        self._validate_level(level)
+        level_idx = LEVEL_ORDER.index(level)
+        return LEVEL_ORDER[: level_idx + 1]
+
     def get_tasks_by_level(self, level: str, db: Session) -> list[Task]:
         """Get tasks filtered by user level (current ± 1).
 
@@ -42,17 +64,7 @@ class TaskDeliveryService:
         Raises:
             TaskDeliveryError: If level is invalid
         """
-        if level not in LEVEL_ORDER:
-            logger.error("Invalid level requested", extra={"level": level})
-            raise TaskDeliveryError(f"Invalid level: {level}")
-
-        level_idx = LEVEL_ORDER.index(level)
-        # Get current level and adjacent levels (within bounds)
-        valid_levels = [LEVEL_ORDER[level_idx]]
-        if level_idx > 0:
-            valid_levels.append(LEVEL_ORDER[level_idx - 1])
-        if level_idx < len(LEVEL_ORDER) - 1:
-            valid_levels.append(LEVEL_ORDER[level_idx + 1])
+        valid_levels = self._get_adjacent_levels(level)
 
         tasks = (
             db.query(Task)
@@ -85,12 +97,7 @@ class TaskDeliveryService:
         Returns:
             List of Task objects from A1 through level
         """
-        if level not in LEVEL_ORDER:
-            logger.error("Invalid level requested", extra={"level": level})
-            raise TaskDeliveryError(f"Invalid level: {level}")
-
-        level_idx = LEVEL_ORDER.index(level)
-        valid_levels = LEVEL_ORDER[: level_idx + 1]
+        valid_levels = self._get_levels_upto(level)
 
         tasks = (
             db.query(Task)
@@ -124,18 +131,12 @@ class TaskDeliveryService:
         Raises:
             TaskDeliveryError: If level or type is invalid
         """
-        if level not in LEVEL_ORDER:
-            raise TaskDeliveryError(f"Invalid level: {level}")
+        self._validate_level(level)
 
         if task_type not in [TaskType.TEXT.value, TaskType.AUDIO.value, TaskType.VIDEO.value]:
             raise TaskDeliveryError(f"Invalid task type: {task_type}")
 
-        level_idx = LEVEL_ORDER.index(level)
-        valid_levels = [LEVEL_ORDER[level_idx]]
-        if level_idx > 0:
-            valid_levels.append(LEVEL_ORDER[level_idx - 1])
-        if level_idx < len(LEVEL_ORDER) - 1:
-            valid_levels.append(LEVEL_ORDER[level_idx + 1])
+        valid_levels = self._get_adjacent_levels(level)
 
         tasks = (
             db.query(Task)
@@ -229,19 +230,26 @@ class TaskDeliveryService:
             logger.error("User has no level assigned", extra={"user_id": user_id})
             raise TaskDeliveryError(f"User has no level assigned: {user_id}")
 
-        tasks = self.get_tasks_for_user_levels(user.current_level, db)
+        valid_levels = self._get_levels_upto(user.current_level)
+        base_query = db.query(Task).filter(
+            and_(
+                Task.level.in_(valid_levels),
+                Task.status == TaskStatus.PUBLISHED.value,
+            )
+        )
+        total_tasks_count = base_query.count()
 
-        if not tasks:
+        if total_tasks_count == 0:
             logger.warning("No tasks available for user level", extra={"level": user.current_level})
             return None
 
-        # Get IDs of tasks the user has completed correctly (exclude these only)
-        correctly_completed_task_ids = self._get_correctly_completed_task_ids(user_id, db)
-
-        # Filter out only correctly completed tasks; wrong answers and new tasks stay available
-        available_tasks = [
-            task for task in tasks if task.sheets_row_id not in correctly_completed_task_ids
-        ]
+        completed_task_ids = select(Progress.task_id).where(
+            Progress.user_id == user_id,
+            Progress.percentage_correct >= CORRECTLY_COMPLETED_THRESHOLD,
+        )
+        available_tasks = (
+            base_query.filter(Task.sheets_row_id.notin_(completed_task_ids)).all()
+        )
 
         if not available_tasks:
             logger.info(
@@ -260,7 +268,7 @@ class TaskDeliveryService:
                 "task_id": selected_task.sheets_row_id,
                 "level": user.current_level,
                 "available_tasks_count": len(available_tasks),
-                "total_tasks_count": len(tasks),
+                "total_tasks_count": total_tasks_count,
             },
         )
 
