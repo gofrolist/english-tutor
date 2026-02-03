@@ -383,3 +383,24 @@ class TestTaskDeliveryService:
 
         with pytest.raises(TaskDeliveryError):
             service.get_tasks_by_level("INVALID", db_session)
+
+    def test_get_tasks_for_user_levels_invalid_level(self, db_session):
+        """Test that invalid level raises error for user level queries."""
+        service = TaskDeliveryService()
+
+        with pytest.raises(TaskDeliveryError):
+            service.get_tasks_for_user_levels("INVALID", db_session)
+
+    def test_get_tasks_by_level_and_type_invalid_level(self, db_session):
+        """Test that invalid level raises error for level/type queries."""
+        service = TaskDeliveryService()
+
+        with pytest.raises(TaskDeliveryError):
+            service.get_tasks_by_level_and_type("INVALID", "text", db_session)
+
+    def test_get_tasks_by_level_and_type_invalid_type(self, db_session):
+        """Test that invalid task type raises error."""
+        service = TaskDeliveryService()
+
+        with pytest.raises(TaskDeliveryError):
+            service.get_tasks_by_level_and_type("B1", "invalid", db_session)
