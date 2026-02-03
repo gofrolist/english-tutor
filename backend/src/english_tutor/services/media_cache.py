@@ -5,10 +5,10 @@ storing them in a persistent volume on Fly.io to avoid repeated downloads.
 """
 
 import hashlib
-import os
 from pathlib import Path
 from typing import Optional
 
+from src.english_tutor.config import get_settings
 from src.english_tutor.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -24,7 +24,7 @@ class MediaCacheService:
             cache_dir: Directory path for cache storage. If None, uses default from config.
         """
         if cache_dir is None:
-            cache_dir = os.getenv("MEDIA_CACHE_DIR", "/app/data/media_cache")
+            cache_dir = get_settings().media_cache_dir
 
         self.cache_dir = Path(cache_dir)
         self._cache_enabled = False

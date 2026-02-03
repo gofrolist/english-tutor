@@ -15,11 +15,12 @@ from src.english_tutor.api.content.questions import router as questions_router
 from src.english_tutor.api.content.questions_by_id import router as questions_by_id_router
 from src.english_tutor.api.content.tasks import router as tasks_router
 from src.english_tutor.api.sync import router as sync_router
-from src.english_tutor.config import DEBUG, TELEGRAM_WEBHOOK_URL
+from src.english_tutor.config import get_settings
 from src.english_tutor.services.scheduler import start_scheduler, stop_scheduler
 from src.english_tutor.utils.logger import get_logger
 
 logger = get_logger(__name__)
+settings = get_settings()
 
 
 def run_migrations() -> None:
@@ -85,9 +86,9 @@ async def lifespan(_app: FastAPI):
     # Set up Telegram webhook if webhook URL is configured
     # Do this in background task to avoid blocking startup
     webhook_setup_task = None
-    if TELEGRAM_WEBHOOK_URL:
+    if settings.telegram_webhook_url:
         webhook_path = "/webhook"
-        webhook_url = f"{TELEGRAM_WEBHOOK_URL.rstrip('/')}{webhook_path}"
+        webhook_url = f"{settings.telegram_webhook_url.rstrip('/')}{webhook_path}"
 
         async def setup_webhook_background():
             """Set up webhook in background to avoid blocking startup."""
@@ -116,7 +117,7 @@ async def lifespan(_app: FastAPI):
             except asyncio.CancelledError:
                 pass
         # Remove webhook on shutdown
-        if TELEGRAM_WEBHOOK_URL:
+        if settings.telegram_webhook_url:
             try:
                 await remove_webhook()
             except Exception as e:
@@ -128,7 +129,7 @@ app = FastAPI(
     title="English Tutor API",
     description="Content management API for English Tutor Telegram Bot",
     version="0.1.0",
-    debug=DEBUG,
+    debug=settings.debug,
     lifespan=lifespan,
 )
 
@@ -158,7 +159,7 @@ async def telegram_webhook(request: Request) -> Response:
 
     This endpoint receives POST requests from Telegram with bot updates.
     """
-    if not TELEGRAM_WEBHOOK_URL:
+    if not settings.telegram_webhook_url:
         return JSONResponse(
             status_code=503,
             content={"error": "Webhook mode not configured"},

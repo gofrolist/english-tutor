@@ -27,14 +27,14 @@ class AssessmentService:
     # Ranges are [min, max) - score >= min and score < max
     # For boundary values, the lower bound is inclusive, upper bound is exclusive
     # C2 includes 1.0 by using 1.01 as upper bound
-    LEVEL_THRESHOLDS = {
-        "A1": (0.0, 0.20),  # 0.0 <= score < 0.20
-        "A2": (0.20, 0.40),  # 0.20 <= score < 0.40
-        "B1": (0.40, 0.60),  # 0.40 <= score < 0.60
-        "B2": (0.60, 0.80),  # 0.60 <= score < 0.80
-        "C1": (0.80, 0.95),  # 0.80 <= score < 0.95
-        "C2": (0.95, 1.01),  # 0.95 <= score <= 1.0 (using 1.01 to include 1.0)
-    }
+    LEVEL_THRESHOLDS = [
+        ("A1", 0.0, 0.20),  # 0.0 <= score < 0.20
+        ("A2", 0.20, 0.40),  # 0.20 <= score < 0.40
+        ("B1", 0.40, 0.60),  # 0.40 <= score < 0.60
+        ("B2", 0.60, 0.80),  # 0.60 <= score < 0.80
+        ("C1", 0.80, 0.95),  # 0.80 <= score < 0.95
+        ("C2", 0.95, 1.01),  # 0.95 <= score <= 1.0 (using 1.01 to include 1.0)
+    ]
 
     # Early stop: offer to stop when user struggles (min answered, window size, thresholds)
     EARLY_STOP_MIN_ANSWERED = 12
@@ -88,7 +88,7 @@ class AssessmentService:
         if score < 0.0 or score > 1.0:
             raise AssessmentError(f"Invalid score: {score}. Must be between 0.0 and 1.0")
 
-        for level, (min_score, max_score) in self.LEVEL_THRESHOLDS.items():
+        for level, min_score, max_score in self.LEVEL_THRESHOLDS:
             if min_score <= score < max_score:
                 return level
 

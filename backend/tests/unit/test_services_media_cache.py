@@ -7,11 +7,20 @@ directory handling, and graceful degradation in read-only environments.
 import tempfile
 from pathlib import Path
 
+import pytest
+
+from src.english_tutor.config import get_settings
 from src.english_tutor.services.media_cache import MediaCacheService
 
 
 class TestMediaCacheService:
     """Test suite for MediaCacheService."""
+
+    @pytest.fixture(autouse=True)
+    def clear_settings_cache(self):
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
 
     def test_init_with_custom_cache_dir(self):
         """Test initialization with custom cache directory."""
