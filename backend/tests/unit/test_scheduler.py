@@ -72,9 +72,11 @@ class TestScheduler:
                 scheduler = get_scheduler()
                 job = scheduler.get_job("content_sync")
                 assert job is not None
-                # Check the trigger configuration - CronTrigger stores minute field
-                trigger = job.trigger
-                assert "30" in str(trigger)
+                # Check the trigger configuration - IntervalTrigger stores interval
+                from apscheduler.triggers.interval import IntervalTrigger
+
+                assert isinstance(job.trigger, IntervalTrigger)
+                assert job.trigger.interval.total_seconds() == 30 * 60  # 30 minutes in seconds
 
     def test_scheduler_uses_default_interval_when_env_not_set(self):
         """Test that scheduler uses 60 minutes default when env var not set."""
@@ -95,8 +97,10 @@ class TestScheduler:
                 scheduler = get_scheduler()
                 job = scheduler.get_job("content_sync")
                 assert job is not None
-                trigger = job.trigger
-                assert "60" in str(trigger)
+                from apscheduler.triggers.interval import IntervalTrigger
+
+                assert isinstance(job.trigger, IntervalTrigger)
+                assert job.trigger.interval.total_seconds() == 60 * 60  # 60 minutes in seconds
 
     def test_scheduler_does_not_start_twice(self):
         """Test that starting scheduler twice doesn't create duplicate jobs."""
@@ -162,9 +166,9 @@ class TestSchedulerAppIndependence:
 
             test_app = FastAPI()
 
-            # Mock start_scheduler to track if it gets called
-            with mock.patch("src.english_tutor.api.app.start_scheduler") as mock_start:
-                with mock.patch("src.english_tutor.api.app.stop_scheduler"):
+            # Mock start_scheduler at the source module (where it's imported from)
+            with mock.patch("src.english_tutor.services.scheduler.start_scheduler") as mock_start:
+                with mock.patch("src.english_tutor.services.scheduler.stop_scheduler"):
                     with mock.patch("src.english_tutor.api.app.run_migrations"):
                         with mock.patch("src.english_tutor.api.app.settings") as mock_settings:
                             mock_settings.telegram_webhook_url = None
@@ -219,8 +223,9 @@ class TestSchedulerAppIndependence:
             test_app = FastAPI()
 
             # When: Running the app lifespan with scheduler enabled
-            with mock.patch("src.english_tutor.api.app.start_scheduler") as mock_start:
-                with mock.patch("src.english_tutor.api.app.stop_scheduler"):
+            # Mock at the source module since app.py imports from scheduler module
+            with mock.patch("src.english_tutor.services.scheduler.start_scheduler") as mock_start:
+                with mock.patch("src.english_tutor.services.scheduler.stop_scheduler"):
                     with mock.patch("src.english_tutor.api.app.run_migrations"):
                         with mock.patch("src.english_tutor.api.app.settings") as mock_settings:
                             mock_settings.telegram_webhook_url = None
