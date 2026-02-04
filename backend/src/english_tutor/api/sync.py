@@ -53,19 +53,20 @@ def sync_content(db: Session = Depends(get_db)) -> SyncResponse:
         sync_service = ContentSyncService()
         stats = sync_service.sync_all(db=db)
 
+        errors_count = stats.get("errors", 0)
         return SyncResponse(
-            success=stats["errors"] == 0,
-            tasks_created=stats["tasks_created"],
-            tasks_updated=stats["tasks_updated"],
-            tasks_deleted=stats["tasks_deleted"],
-            questions_created=stats["questions_created"],
-            questions_updated=stats["questions_updated"],
-            questions_deleted=stats["questions_deleted"],
+            success=errors_count == 0,
+            tasks_created=stats.get("tasks_created", 0),
+            tasks_updated=stats.get("tasks_updated", 0),
+            tasks_deleted=stats.get("tasks_deleted", 0),
+            questions_created=stats.get("questions_created", 0),
+            questions_updated=stats.get("questions_updated", 0),
+            questions_deleted=stats.get("questions_deleted", 0),
             assessment_questions_created=stats.get("assessment_questions_created", 0),
             assessment_questions_updated=stats.get("assessment_questions_updated", 0),
-            errors=stats["errors"],
+            errors=errors_count,
             message="Content sync completed successfully"
-            if stats["errors"] == 0
+            if errors_count == 0
             else "Content sync completed with errors",
         )
 

@@ -114,9 +114,7 @@ class AssessmentSyncService:
             AssessmentQuestion instance if found, None otherwise.
         """
         return (
-            db.query(AssessmentQuestion)
-            .filter(AssessmentQuestion.sheets_row_id == row_id)
-            .first()
+            db.query(AssessmentQuestion).filter(AssessmentQuestion.sheets_row_id == row_id).first()
         )
 
     def _create_question(
