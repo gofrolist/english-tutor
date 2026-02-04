@@ -17,7 +17,7 @@ import signal
 import sys
 
 # Import config first to initialize logging
-from src.english_tutor.config import DEBUG  # noqa: F401
+from src.english_tutor.config import get_settings  # noqa: F401
 from src.english_tutor.services.scheduler import (
     get_scheduler,
     start_scheduler,
