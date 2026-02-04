@@ -72,12 +72,12 @@ class TestContentSyncTasks:
         assert task1.title == "New Task 1"
         assert task1.content_text == "Task content for learning"
         assert task1.language_domain == "grammar"
-        assert task1.status == TaskStatus.published
+        assert task1.status == TaskStatus.PUBLISHED
 
         task2 = db_session.query(Task).filter(Task.sheets_row_id == "task_row_2").first()
         assert task2 is not None
         assert task2.level == "A2"
-        assert task2.status == TaskStatus.draft
+        assert task2.status == TaskStatus.DRAFT
 
     def test_sync_tasks_updates_existing(self, db_session):
         """Test that sync updates existing tasks when data changes."""
@@ -89,7 +89,7 @@ class TestContentSyncTasks:
             title="Original Title",
             content_text="Original content",
             language_domain="grammar",
-            status=TaskStatus.draft,
+            status=TaskStatus.DRAFT,
         )
         db_session.add(existing_task)
         db_session.commit()
@@ -134,7 +134,7 @@ class TestContentSyncTasks:
         assert existing_task.content_text == "Updated content"
         assert existing_task.language_domain == "vocabulary"
         assert existing_task.explanation == "New explanation"
-        assert existing_task.status == TaskStatus.published
+        assert existing_task.status == TaskStatus.PUBLISHED
 
     def test_sync_tasks_skips_unchanged(self, db_session):
         """Test that sync skips tasks when data has not changed."""
@@ -147,7 +147,7 @@ class TestContentSyncTasks:
             content_text="Same content",
             language_domain="grammar",
             explanation="Same explanation",
-            status=TaskStatus.published,
+            status=TaskStatus.PUBLISHED,
         )
         db_session.add(existing_task)
         db_session.commit()
@@ -211,7 +211,10 @@ class TestContentSyncTasks:
         assert "Failed to read from Google Sheets" in str(exc_info.value)
 
     def test_sync_tasks_handles_individual_task_errors(self, db_session):
-        """Test that sync continues when individual task sync fails."""
+        """Test that sync continues when individual task sync fails.
+
+        Tests that tasks missing row_id are skipped while valid tasks are processed.
+        """
         # Mock Google Sheets service with one valid and one problematic task
         mock_sheets_service = MagicMock()
         mock_sheets_service.read_tasks.return_value = [
@@ -224,10 +227,10 @@ class TestContentSyncTasks:
                 "status": "published",
             },
             {
-                "row_id": "task_row_invalid",
-                "level": "INVALID_LEVEL",  # This will cause validation error
+                # Missing row_id - this task should be skipped
+                "level": "A2",
                 "type": "text",
-                "title": "Invalid Task",
+                "title": "Invalid Task Without Row ID",
                 "content_text": "Content",
                 "status": "published",
             },
@@ -244,11 +247,11 @@ class TestContentSyncTasks:
             drive_service=mock_drive_service,
         )
 
-        # Run sync - should not raise, but record error
+        # Run sync - should not raise, task without row_id should be skipped
         stats = service.sync_all(db=db_session)
 
-        # Valid task should be created
-        assert stats["tasks_created"] >= 1
+        # Valid task should be created (the one without row_id is skipped)
+        assert stats["tasks_created"] == 1
 
         # Check that valid task exists
         valid_task = db_session.query(Task).filter(Task.sheets_row_id == "task_row_valid").first()
@@ -303,7 +306,7 @@ class TestContentSyncTasks:
             type="text",
             title="Existing Task",
             content_text="Old content",
-            status=TaskStatus.draft,
+            status=TaskStatus.DRAFT,
         )
         db_session.add(existing_task)
         db_session.commit()
@@ -351,7 +354,7 @@ class TestContentSyncTasks:
 
         updated_task = db_session.query(Task).filter(Task.sheets_row_id == "existing_task").first()
         assert updated_task.title == "Existing Task Updated"
-        assert updated_task.status == TaskStatus.published
+        assert updated_task.status == TaskStatus.PUBLISHED
 
         new_task = db_session.query(Task).filter(Task.sheets_row_id == "new_task").first()
         assert new_task is not None
@@ -366,7 +369,7 @@ class TestContentSyncTasks:
             type="text",
             title="Matching Task",
             content_text="Original content",
-            status=TaskStatus.draft,
+            status=TaskStatus.DRAFT,
         )
         db_session.add(existing_task)
         db_session.commit()

@@ -33,7 +33,7 @@ class TestContentSyncQuestions:
             title="Test Task",
             content_text="Task content for learning",
             language_domain="grammar",
-            status=TaskStatus.published,
+            status=TaskStatus.PUBLISHED,
         )
         db_session.add(task)
         db_session.commit()
@@ -270,7 +270,7 @@ class TestContentSyncQuestions:
             type="text",
             title="Task One",
             content_text="Content one",
-            status=TaskStatus.published,
+            status=TaskStatus.PUBLISHED,
         )
         task2 = Task(
             sheets_row_id="task_row_2",
@@ -278,7 +278,7 @@ class TestContentSyncQuestions:
             type="text",
             title="Task Two",
             content_text="Content two",
-            status=TaskStatus.published,
+            status=TaskStatus.PUBLISHED,
         )
         db_session.add_all([task1, task2])
         db_session.commit()

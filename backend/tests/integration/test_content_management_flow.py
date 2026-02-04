@@ -313,7 +313,7 @@ class TestContentSyncFlow:
         assert task1.level == "B1"
         assert task1.type == "text"
         assert task1.title == "Grammar: Past Tense"
-        assert task1.status == TaskStatus.published
+        assert task1.status == TaskStatus.PUBLISHED
 
         task2 = db_session.query(Task).filter(Task.sheets_row_id == "task_sync_2").first()
         assert task2 is not None
@@ -343,7 +343,7 @@ class TestContentSyncFlow:
             type="text",
             title="Original Title",
             content_text="Original content",
-            status=TaskStatus.draft,
+            status=TaskStatus.DRAFT,
         )
         db_session.add(existing_task)
         db_session.commit()
@@ -401,7 +401,7 @@ class TestContentSyncFlow:
         db_session.refresh(existing_task)
         assert existing_task.title == "Updated Title"
         assert existing_task.content_text == "Updated content"
-        assert existing_task.status == TaskStatus.published
+        assert existing_task.status == TaskStatus.PUBLISHED
 
         # Verify question was updated
         db_session.refresh(existing_question)
@@ -511,7 +511,7 @@ class TestContentSyncFlow:
             type="text",
             title="Task Before Error",
             content_text="Content",
-            status=TaskStatus.published,
+            status=TaskStatus.PUBLISHED,
         )
         db_session.add(existing_task)
         db_session.commit()
