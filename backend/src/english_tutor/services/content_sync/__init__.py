@@ -7,8 +7,10 @@ from src.english_tutor.services.content_sync.base import (
     SyncStats,
     log_sync,
 )
+from src.english_tutor.services.content_sync.task_sync import TaskSyncService
 
 __all__ = [
     "SyncStats",
+    "TaskSyncService",
     "log_sync",
 ]
