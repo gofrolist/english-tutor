@@ -7,7 +7,7 @@ import os
 from typing import Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from src.english_tutor.services.content_sync import ContentSyncService
 from src.english_tutor.utils.logger import get_logger
@@ -49,7 +49,7 @@ def start_scheduler() -> None:
     sync_service = ContentSyncService()
     scheduler.add_job(
         func=sync_service.sync_all,
-        trigger=CronTrigger(minute=f"*/{sync_interval}"),  # Every N minutes
+        trigger=IntervalTrigger(minutes=sync_interval),
         id="content_sync",
         name="Content Sync from Google Sheets/Drive",
         replace_existing=True,

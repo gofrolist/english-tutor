@@ -16,7 +16,6 @@ from src.english_tutor.api.content.questions_by_id import router as questions_by
 from src.english_tutor.api.content.tasks import router as tasks_router
 from src.english_tutor.api.sync import router as sync_router
 from src.english_tutor.config import get_settings
-from src.english_tutor.services.scheduler import start_scheduler, stop_scheduler
 from src.english_tutor.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -103,7 +102,11 @@ async def lifespan(_app: FastAPI):
     else:
         logger.info("TELEGRAM_WEBHOOK_URL not set, webhook mode disabled")
 
-    if os.getenv("ENABLE_SYNC_SCHEDULER", "false").lower() == "true":
+    # Track if scheduler was started so we can stop it on shutdown
+    scheduler_enabled = os.getenv("ENABLE_SYNC_SCHEDULER", "false").lower() == "true"
+    if scheduler_enabled:
+        from src.english_tutor.services.scheduler import start_scheduler
+
         start_scheduler()
     try:
         yield
@@ -122,7 +125,11 @@ async def lifespan(_app: FastAPI):
                 await remove_webhook()
             except Exception as e:
                 logger.warning(f"Error removing webhook on shutdown: {e}")
-        stop_scheduler()
+        # Only stop scheduler if it was started
+        if scheduler_enabled:
+            from src.english_tutor.services.scheduler import stop_scheduler
+
+            stop_scheduler()
 
 
 app = FastAPI(
