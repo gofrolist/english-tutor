@@ -51,6 +51,14 @@ class AssessmentSyncService:
             >>> print(f"Created: {stats['assessment_questions_created']}")
         """
         stats: SyncStats = {
+            "tasks_created": 0,
+            "tasks_updated": 0,
+            "tasks_skipped": 0,
+            "tasks_deleted": 0,
+            "questions_created": 0,
+            "questions_updated": 0,
+            "questions_skipped": 0,
+            "questions_deleted": 0,
             "assessment_questions_created": 0,
             "assessment_questions_updated": 0,
             "assessment_questions_skipped": 0,

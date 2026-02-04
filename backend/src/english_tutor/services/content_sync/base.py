@@ -11,7 +11,7 @@ from src.english_tutor.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-class SyncStats(TypedDict, total=False):
+class SyncStats(TypedDict):
     """Statistics returned from sync operations.
 
     Attributes:
