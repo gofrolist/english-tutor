@@ -630,8 +630,8 @@ class TestContentSyncFlow:
         ]
 
         mock_drive_service = MagicMock()
-        mock_drive_service.get_file_download_url.side_effect = (
-            lambda fid: f"https://drive.google.com/{fid}"
+        mock_drive_service.get_file_download_url.side_effect = lambda fid: (
+            f"https://drive.google.com/{fid}"
         )
 
         service = ContentSyncService(

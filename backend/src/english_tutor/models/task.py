@@ -17,14 +17,14 @@ def _utcnow_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-class TaskStatus(str, enum.Enum):
+class TaskStatus(enum.StrEnum):
     """Task status enumeration."""
 
     DRAFT = "draft"
     PUBLISHED = "published"
 
 
-class TaskType(str, enum.Enum):
+class TaskType(enum.StrEnum):
     """Task type enumeration."""
 
     TEXT = "text"

@@ -28,7 +28,7 @@ def _utcnow_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-class AssessmentStatus(str, enum.Enum):
+class AssessmentStatus(enum.StrEnum):
     """Assessment status enumeration."""
 
     IN_PROGRESS = "in_progress"
